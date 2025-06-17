@@ -1,5 +1,48 @@
 # DMD Cottage Sheets
 
+## 🔧 Быстрое решение проблем WebSocket/API
+
+Если вы видите ошибки типа:
+- `WebSocket connection to 'wss://nginx.raznaradki-from-gs.orb.local:3000/ws' failed`
+- `[blocked] The page at https://... requested insecure content from http://localhost/api/...`
+- `XMLHttpRequest cannot load http://localhost/api/... due to access control checks`
+
+### Решение:
+
+1. **Пересоберите и перезапустите контейнеры**:
+   ```bash
+   docker-compose down
+   docker-compose up -d --build
+   ```
+
+2. **Если проблемы с HTTPS, создайте SSL сертификаты**:
+   ```bash
+   # Создать папку для сертификатов
+   mkdir -p nginx/ssl
+   
+   # Создать самоподписанный сертификат (для тестирования)
+   openssl req -x509 -newkey rsa:4096 -keyout nginx/ssl/key.pem -out nginx/ssl/cert.pem -days 365 -nodes -subj "/C=RU/ST=Moscow/L=Moscow/O=DMD/CN=nginx.raznaradki-from-gs.orb.local"
+   ```
+
+3. **Обновите .env файл**:
+   ```bash
+   cp env.example .env
+   # Отредактируйте .env если нужно
+   ```
+
+4. **Перезапустите с новой конфигурацией**:
+   ```bash
+   docker-compose up -d --build
+   ```
+
+### Что исправлено:
+- ✅ API и WebSocket теперь используют относительные URL в продакшене
+- ✅ CORS настроен для поддержки orb.local доменов
+- ✅ nginx правильно проксирует WebSocket через HTTPS
+- ✅ Добавлены security headers
+
+---
+
 Веб-сервис для совместной работы с таблицами, аналог Google Sheets для компании DMD cottage.
 
 ## Особенности

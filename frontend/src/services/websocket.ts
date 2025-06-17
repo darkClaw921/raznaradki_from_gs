@@ -5,9 +5,12 @@ class WebSocketService {
   private currentSheetId: string | null = null;
 
   connect(token: string) {
-    const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+    // В продакшене используем текущий домен, в разработке - localhost
+    const SOCKET_URL = process.env.NODE_ENV === 'production' 
+      ? window.location.origin 
+      : process.env.REACT_APP_API_URL || 'http://localhost:3001';
     
-    this.socket = io(API_URL, {
+    this.socket = io(SOCKET_URL, {
       auth: {
         token: token
       },

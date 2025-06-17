@@ -30,7 +30,10 @@ const server = createServer(app);
 const allowedOrigins = [
   process.env.FRONTEND_URL || "http://localhost",
   "http://localhost:3000",
-  "http://localhost"
+  "http://localhost",
+  // Поддержка продакшен доменов
+  /^https?:\/\/.*\.orb\.local(:\d+)?$/,
+  /^https:\/\/nginx\.raznaradki-from-gs\.orb\.local$/
 ];
 
 const io = new Server(server, {

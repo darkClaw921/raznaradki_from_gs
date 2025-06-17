@@ -25,13 +25,13 @@ const sequelize = new Sequelize({
 });
 
 // Инициализация моделей
-const User = UserFactory(sequelize);
-const Role = RoleFactory(sequelize);
-const Permission = PermissionFactory(sequelize);
-const Sheet = SheetFactory(sequelize);
-const Cell = CellFactory(sequelize);
-const UserSheet = UserSheetFactory(sequelize);
-const RolePermission = RolePermissionFactory(sequelize);
+const User: any = UserFactory(sequelize);
+const Role: any = RoleFactory(sequelize);
+const Permission: any = PermissionFactory(sequelize);
+const Sheet: any = SheetFactory(sequelize);
+const Cell: any = CellFactory(sequelize);
+const UserSheet: any = UserSheetFactory(sequelize);
+const RolePermission: any = RolePermissionFactory(sequelize);
 
 // Определение ассоциаций
 const setupAssociations = () => {

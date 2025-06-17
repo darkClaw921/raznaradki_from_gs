@@ -1,6 +1,9 @@
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+// В продакшене используем относительный URL, в разработке - localhost
+const API_URL = process.env.NODE_ENV === 'production' 
+  ? '/api' 
+  : process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
 
 // Создаем instance axios с базовой конфигурацией
 const api = axios.create({

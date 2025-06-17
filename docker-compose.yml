@@ -24,16 +24,15 @@ services:
       timeout: 20s
       retries: 10
 
-  # Backend API
+  # Backend API - Production Mode
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-      target: ${NODE_ENV:-development}
     container_name: dmd_backend
     restart: unless-stopped
     environment:
-      NODE_ENV: ${NODE_ENV:-development}
+      NODE_ENV: production
       PORT: 3001
       DB_HOST: mysql
       DB_PORT: 3306
@@ -48,10 +47,6 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123456}
       ADMIN_FIRST_NAME: ${ADMIN_FIRST_NAME:-Администратор}
       ADMIN_LAST_NAME: ${ADMIN_LAST_NAME:-Системы}
-    volumes:
-      - ./backend/src:/app/src
-      - ./backend/package.json:/app/package.json
-      - /app/node_modules
     ports:
       - "3001:3001"
     depends_on:
@@ -60,29 +55,21 @@ services:
     networks:
       - dmd_network
 
-  # Frontend React App
+  # Frontend React App - Production Mode
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      target: ${NODE_ENV:-development}
     container_name: dmd_frontend
     restart: unless-stopped
     environment:
-      NODE_ENV: ${NODE_ENV:-development}
+      NODE_ENV: production
       REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost/api}
       REACT_APP_WS_URL: ${REACT_APP_WS_URL:-ws://localhost}
-      WATCHPACK_POLLING: true
-    volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
-      - ./frontend/package.json:/app/package.json
-      - /app/node_modules
     ports:
       - "3000:3000"
     networks:
       - dmd_network
-    command: ${FRONTEND_COMMAND:-npm start}
 
   # Nginx Reverse Proxy
   nginx:
@@ -94,6 +81,7 @@ services:
       - "443:443"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       - backend
       - frontend
