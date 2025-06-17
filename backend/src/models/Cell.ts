@@ -1,0 +1,114 @@
+import { DataTypes, Model, Sequelize } from 'sequelize';
+
+export interface CellAttributes {
+  id: number;
+  sheetId: number;
+  row: number;
+  column: number;
+  value?: string;
+  formula?: string;
+  format?: any;
+  isLocked: boolean;
+  mergedWith?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface CellCreationAttributes extends Omit<CellAttributes, 'id' | 'createdAt' | 'updatedAt'> {
+  id?: number;
+}
+
+class Cell extends Model<CellAttributes, CellCreationAttributes> implements CellAttributes {
+  public id!: number;
+  public sheetId!: number;
+  public row!: number;
+  public column!: number;
+  public value?: string;
+  public formula?: string;
+  public format?: any;
+  public isLocked!: boolean;
+  public mergedWith?: string;
+  public readonly createdAt!: Date;
+  public readonly updatedAt!: Date;
+
+  // Виртуальное поле для адреса ячейки (например: A1, B2)
+  public get address(): string {
+    const columnLetter = String.fromCharCode(65 + this.column); // A, B, C...
+    return `${columnLetter}${this.row + 1}`;
+  }
+}
+
+export const CellFactory = (sequelize: Sequelize) => {
+  Cell.init(
+    {
+      id: {
+        type: DataTypes.INTEGER,
+        autoIncrement: true,
+        primaryKey: true,
+      },
+      sheetId: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        field: 'sheet_id',
+      },
+      row: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        validate: {
+          min: 0,
+        },
+      },
+      column: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        validate: {
+          min: 0,
+        },
+      },
+      value: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment: 'Отображаемое значение ячейки',
+      },
+      formula: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment: 'Формула ячейки (если есть)',
+      },
+      format: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        comment: 'Форматирование ячейки (цвет, шрифт и т.д.)',
+      },
+      isLocked: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+        field: 'is_locked',
+      },
+      mergedWith: {
+        type: DataTypes.STRING(10),
+        allowNull: true,
+        field: 'merged_with',
+        comment: 'Адрес главной ячейки при объединении',
+      },
+    },
+    {
+      sequelize,
+      modelName: 'Cell',
+      tableName: 'cells',
+      timestamps: true,
+      underscored: true,
+      indexes: [
+        {
+          fields: ['sheet_id', 'row', 'column'],
+          unique: true,
+        },
+        {
+          fields: ['sheet_id'],
+        },
+      ],
+    }
+  );
+
+  return Cell;
+}; 

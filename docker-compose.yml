@@ -1,0 +1,126 @@
+
+
+services:
+  # База данных MySQL
+  mysql:
+    image: mysql:8.0
+    container_name: dmd_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-dmd_cottage_sheets}
+      MYSQL_USER: ${MYSQL_USER:-dmduser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-dmdpassword}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./database/seeds:/docker-entrypoint-initdb.d/seeds
+    ports:
+      - "3306:3306"
+    networks:
+      - dmd_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: ${NODE_ENV:-development}
+    container_name: dmd_backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3001
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${MYSQL_DATABASE:-dmd_cottage_sheets}
+      DB_USER: ${MYSQL_USER:-dmduser}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-dmdpassword}
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      # Переменные администратора
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@dmdcottage.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123456}
+      ADMIN_FIRST_NAME: ${ADMIN_FIRST_NAME:-Администратор}
+      ADMIN_LAST_NAME: ${ADMIN_LAST_NAME:-Системы}
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/package.json:/app/package.json
+      - /app/node_modules
+    ports:
+      - "3001:3001"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - dmd_network
+
+  # Frontend React App
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: ${NODE_ENV:-development}
+    container_name: dmd_frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost/api}
+      REACT_APP_WS_URL: ${REACT_APP_WS_URL:-ws://localhost}
+      WATCHPACK_POLLING: true
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/package.json:/app/package.json
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    networks:
+      - dmd_network
+    command: ${FRONTEND_COMMAND:-npm start}
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: dmd_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - dmd_network
+
+  # Adminer для управления БД (опционально)
+  adminer:
+    image: adminer:latest
+    container_name: dmd_adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: mysql
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - dmd_network
+    profiles:
+      - admin
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  dmd_network:
+    driver: bridge
