@@ -7,6 +7,7 @@ import { CellFactory } from './Cell';
 import { UserSheetFactory } from './UserSheet';
 import { RolePermissionFactory } from './RolePermission';
 import { CellHistoryFactory } from './CellHistory';
+import { SheetTemplateFactory } from './SheetTemplate';
 
 // Инициализация Sequelize
 const sequelize = new Sequelize({
@@ -26,88 +27,94 @@ const sequelize = new Sequelize({
 });
 
 // Инициализация моделей
-const User: any = UserFactory(sequelize);
-const Role: any = RoleFactory(sequelize);
-const Permission: any = PermissionFactory(sequelize);
-const Sheet: any = SheetFactory(sequelize);
-const Cell: any = CellFactory(sequelize);
-const UserSheet: any = UserSheetFactory(sequelize);
-const RolePermission: any = RolePermissionFactory(sequelize);
-const CellHistory: any = CellHistoryFactory(sequelize);
+const UserModel = UserFactory(sequelize);
+const RoleModel = RoleFactory(sequelize);
+const PermissionModel = PermissionFactory(sequelize);
+const SheetModel = SheetFactory(sequelize);
+const CellModel = CellFactory(sequelize);
+const UserSheetModel = UserSheetFactory(sequelize);
+const RolePermissionModel = RolePermissionFactory(sequelize);
+const CellHistoryModel = CellHistoryFactory(sequelize);
+const SheetTemplateModel = SheetTemplateFactory(sequelize);
 
 // Определение ассоциаций
 const setupAssociations = () => {
   // User - Role (многие к одному)
-  User.belongsTo(Role, { foreignKey: 'roleId', as: 'role' });
-  Role.hasMany(User, { foreignKey: 'roleId', as: 'users' });
+  UserModel.belongsTo(RoleModel, { foreignKey: 'roleId', as: 'role' });
+  RoleModel.hasMany(UserModel, { foreignKey: 'roleId', as: 'users' });
 
   // User - Sheet (многие ко многим через UserSheet)
-  User.belongsToMany(Sheet, {
-    through: UserSheet,
+  UserModel.belongsToMany(SheetModel, {
+    through: UserSheetModel,
     foreignKey: 'userId',
     otherKey: 'sheetId',
     as: 'sheets'
   });
-  Sheet.belongsToMany(User, {
-    through: UserSheet,
+  SheetModel.belongsToMany(UserModel, {
+    through: UserSheetModel,
     foreignKey: 'sheetId',
     otherKey: 'userId',
     as: 'users'
   });
 
   // Role - Permission (многие ко многим)
-  Role.belongsToMany(Permission, {
-    through: RolePermission,
+  RoleModel.belongsToMany(PermissionModel, {
+    through: RolePermissionModel,
     foreignKey: 'roleId',
     otherKey: 'permissionId',
     as: 'permissions'
   });
-  Permission.belongsToMany(Role, {
-    through: RolePermission,
+  PermissionModel.belongsToMany(RoleModel, {
+    through: RolePermissionModel,
     foreignKey: 'permissionId',
     otherKey: 'roleId',
     as: 'roles'
   });
 
   // Sheet - Cell (один ко многим)
-  Sheet.hasMany(Cell, { foreignKey: 'sheetId', as: 'cells' });
-  Cell.belongsTo(Sheet, { foreignKey: 'sheetId', as: 'sheet' });
+  SheetModel.hasMany(CellModel, { foreignKey: 'sheetId', as: 'cells' });
+  CellModel.belongsTo(SheetModel, { foreignKey: 'sheetId', as: 'sheet' });
 
   // User - Sheet (создатель)
-  Sheet.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
-  User.hasMany(Sheet, { foreignKey: 'createdBy', as: 'createdSheets' });
+  SheetModel.belongsTo(UserModel, { foreignKey: 'createdBy', as: 'creator' });
+  UserModel.hasMany(SheetModel, { foreignKey: 'createdBy', as: 'createdSheets' });
 
   // Прямые ассоциации для UserSheet (нужно для include)
-  UserSheet.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-  UserSheet.belongsTo(Sheet, { foreignKey: 'sheetId', as: 'sheet' });
-  User.hasMany(UserSheet, { foreignKey: 'userId', as: 'userSheets' });
-  Sheet.hasMany(UserSheet, { foreignKey: 'sheetId', as: 'userSheets' });
+  UserSheetModel.belongsTo(UserModel, { foreignKey: 'userId', as: 'user' });
+  UserSheetModel.belongsTo(SheetModel, { foreignKey: 'sheetId', as: 'sheet' });
+  UserModel.hasMany(UserSheetModel, { foreignKey: 'userId', as: 'userSheets' });
+  SheetModel.hasMany(UserSheetModel, { foreignKey: 'sheetId', as: 'userSheets' });
 
   // Прямые ассоциации для RolePermission (нужно для include)
-  RolePermission.belongsTo(Role, { foreignKey: 'roleId', as: 'role' });
-  RolePermission.belongsTo(Permission, { foreignKey: 'permissionId', as: 'permission' });
-  Role.hasMany(RolePermission, { foreignKey: 'roleId', as: 'rolePermissions' });
-  Permission.hasMany(RolePermission, { foreignKey: 'permissionId', as: 'permissionRoles' });
+  RolePermissionModel.belongsTo(RoleModel, { foreignKey: 'roleId', as: 'role' });
+  RolePermissionModel.belongsTo(PermissionModel, { foreignKey: 'permissionId', as: 'permission' });
+  RoleModel.hasMany(RolePermissionModel, { foreignKey: 'roleId', as: 'rolePermissions' });
+  PermissionModel.hasMany(RolePermissionModel, { foreignKey: 'permissionId', as: 'permissionRoles' });
 
   // Ассоциации для CellHistory
-  CellHistory.belongsTo(Cell, { foreignKey: 'cellId', as: 'cell' });
-  CellHistory.belongsTo(User, { foreignKey: 'changedBy', as: 'changedByUser' });
-  CellHistory.belongsTo(Sheet, { foreignKey: 'sheetId', as: 'sheet' });
-  Cell.hasMany(CellHistory, { foreignKey: 'cellId', as: 'history' });
-  User.hasMany(CellHistory, { foreignKey: 'changedBy', as: 'cellChanges' });
-  Sheet.hasMany(CellHistory, { foreignKey: 'sheetId', as: 'cellHistory' });
+  CellHistoryModel.belongsTo(CellModel, { foreignKey: 'cellId', as: 'cell' });
+  CellHistoryModel.belongsTo(UserModel, { foreignKey: 'changedBy', as: 'changedByUser' });
+  CellHistoryModel.belongsTo(SheetModel, { foreignKey: 'sheetId', as: 'sheet' });
+  CellModel.hasMany(CellHistoryModel, { foreignKey: 'cellId', as: 'history' });
+  UserModel.hasMany(CellHistoryModel, { foreignKey: 'changedBy', as: 'cellChanges' });
+  SheetModel.hasMany(CellHistoryModel, { foreignKey: 'sheetId', as: 'cellHistory' });
+
+  // Sheet - SheetTemplate (один ко многим)
+  SheetModel.belongsTo(SheetTemplateModel, { foreignKey: 'templateId', as: 'template' });
+  SheetTemplateModel.hasMany(SheetModel, { foreignKey: 'templateId', as: 'sheets' });
 };
 
 setupAssociations();
 
 export {
   sequelize,
-  User,
-  Role,
-  Permission,
-  Sheet,
-  Cell,
-  UserSheet,
-  RolePermission,
-  CellHistory
+  UserModel as User,
+  RoleModel as Role,
+  PermissionModel as Permission,
+  SheetModel as Sheet,
+  CellModel as Cell,
+  UserSheetModel as UserSheet,
+  RolePermissionModel as RolePermission,
+  CellHistoryModel as CellHistory,
+  SheetTemplateModel as SheetTemplate
 }; 

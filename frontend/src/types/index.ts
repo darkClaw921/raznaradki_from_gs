@@ -182,4 +182,34 @@ export interface CellLockedEvent {
 // Utility types
 export type PermissionType = 'read' | 'write' | 'admin';
 export type CellAddress = `${string}${number}`; // например: A1, B2
-export type CellRange = `${CellAddress}:${CellAddress}`; // например: A1:B2 
+export type CellRange = `${CellAddress}:${CellAddress}`; // например: A1:B2
+
+// Типы для шаблонов таблиц
+export interface SheetTemplate {
+  id: number;
+  name: string;
+  description: string;
+  category: string;
+  structure: {
+    headers: TemplateCell[];
+    sampleData: TemplateCell[];
+    columnWidths?: { [key: string]: number };
+  };
+  rowCount: number;
+  columnCount: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TemplateCell {
+  row: number;
+  column: number;
+  value: string;
+  format?: CellFormat;
+}
+
+export interface CreateSheetFromTemplateRequest {
+  name: string;
+  description?: string;
+} 

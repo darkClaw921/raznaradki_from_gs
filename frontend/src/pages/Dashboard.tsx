@@ -22,6 +22,10 @@ import {
   MenuItem,
   Box,
   Chip,
+  Tabs,
+  Tab,
+  CardMedia,
+  Divider,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -29,13 +33,38 @@ import {
   AccountCircle,
   ExitToApp as LogoutIcon,
   AdminPanelSettings,
+  TableView,
+  Description,
 } from '@mui/icons-material';
 import { AppDispatch, RootState } from '../store';
 import { logout } from '../store/authSlice';
 import { setSheets, setLoading } from '../store/sheetSlice';
-import { sheetsApi } from '../services/api';
+import { sheetsApi, templatesApi } from '../services/api';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { SheetTemplate } from '../types';
+
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
+}
+
+function TabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`simple-tabpanel-${index}`}
+      aria-labelledby={`simple-tab-${index}`}
+      {...other}
+    >
+      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
+    </div>
+  );
+}
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -45,6 +74,9 @@ const Dashboard: React.FC = () => {
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null);
+  const [tabValue, setTabValue] = useState(0);
+  const [templates, setTemplates] = useState<SheetTemplate[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<SheetTemplate | null>(null);
   const [newSheetForm, setNewSheetForm] = useState({
     name: '',
     description: '',
@@ -53,6 +85,7 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     loadSheets();
+    loadTemplates();
   }, []);
 
   const loadSheets = async () => {
@@ -67,20 +100,58 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const loadTemplates = async () => {
+    try {
+      const response = await templatesApi.getTemplates();
+      setTemplates(response.data.templates);
+    } catch (error) {
+      console.error('Ошибка загрузки шаблонов:', error);
+    }
+  };
+
   const handleCreateSheet = async () => {
     try {
       if (!newSheetForm.name) return;
       
-      const response = await sheetsApi.createSheet(newSheetForm);
+      let response;
+      if (selectedTemplate) {
+        // Создание из шаблона
+        response = await templatesApi.createSheetFromTemplate(selectedTemplate.id, {
+          name: newSheetForm.name,
+          description: newSheetForm.description,
+        });
+      } else {
+        // Обычное создание
+        response = await sheetsApi.createSheet(newSheetForm);
+      }
+      
       await loadSheets(); // Перезагружаем список
       setCreateDialogOpen(false);
       setNewSheetForm({ name: '', description: '', isPublic: false });
+      setSelectedTemplate(null);
+      setTabValue(0);
       
       // Переходим к созданной таблице
       navigate(`/sheet/${response.data.sheet.id}`);
     } catch (error) {
       console.error('Ошибка создания таблицы:', error);
     }
+  };
+
+  const handleCloseDialog = () => {
+    setCreateDialogOpen(false);
+    setNewSheetForm({ name: '', description: '', isPublic: false });
+    setSelectedTemplate(null);
+    setTabValue(0);
+  };
+
+  const handleTemplateSelect = (template: SheetTemplate) => {
+    setSelectedTemplate(template);
+    setNewSheetForm({
+      ...newSheetForm,
+      name: template.name,
+      description: template.description,
+    });
   };
 
   const handleLogout = () => {
@@ -95,6 +166,14 @@ const Dashboard: React.FC = () => {
   const handleUserMenuClose = () => {
     setUserMenuAnchor(null);
   };
+
+  const groupedTemplates = templates.reduce((acc, template) => {
+    if (!acc[template.category]) {
+      acc[template.category] = [];
+    }
+    acc[template.category].push(template);
+    return acc;
+  }, {} as Record<string, SheetTemplate[]>);
 
   return (
     <>
@@ -173,6 +252,15 @@ const Dashboard: React.FC = () => {
                     {sheet.isPublic && (
                       <Chip label="Публичная" size="small" color="info" sx={{ mt: 1 }} />
                     )}
+                    {sheet.template && (
+                      <Chip 
+                        label={`Шаблон: ${sheet.template.name}`} 
+                        size="small" 
+                        color="primary" 
+                        variant="outlined"
+                        sx={{ mt: 1, ml: 1 }} 
+                      />
+                    )}
                   </CardContent>
                   <CardActions>
                     <Button
@@ -243,36 +331,143 @@ const Dashboard: React.FC = () => {
       </Menu>
 
       {/* Create Sheet Dialog */}
-      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Создать новую таблицу</DialogTitle>
+      <Dialog 
+        open={createDialogOpen} 
+        onClose={handleCloseDialog} 
+        maxWidth="md" 
+        fullWidth
+        PaperProps={{ sx: { minHeight: '600px' } }}
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <TableView />
+            Создать новую таблицу
+          </Box>
+        </DialogTitle>
         <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Название таблицы"
-            fullWidth
-            variant="outlined"
-            value={newSheetForm.name}
-            onChange={(e) => setNewSheetForm({ ...newSheetForm, name: e.target.value })}
-            sx={{ mb: 2 }}
-          />
-          <TextField
-            margin="dense"
-            label="Описание (необязательно)"
-            fullWidth
-            multiline
-            rows={3}
-            variant="outlined"
-            value={newSheetForm.description}
-            onChange={(e) => setNewSheetForm({ ...newSheetForm, description: e.target.value })}
-          />
+          <Tabs 
+            value={tabValue} 
+            onChange={(_, newValue) => setTabValue(newValue)}
+            sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
+          >
+            <Tab label="Пустая таблица" />
+            <Tab label="Из шаблона" />
+          </Tabs>
+
+          <TabPanel value={tabValue} index={0}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <TextField
+                autoFocus
+                label="Название таблицы"
+                fullWidth
+                variant="outlined"
+                value={newSheetForm.name}
+                onChange={(e) => setNewSheetForm({ ...newSheetForm, name: e.target.value })}
+              />
+              <TextField
+                label="Описание (необязательно)"
+                fullWidth
+                multiline
+                rows={3}
+                variant="outlined"
+                value={newSheetForm.description}
+                onChange={(e) => setNewSheetForm({ ...newSheetForm, description: e.target.value })}
+              />
+            </Box>
+          </TabPanel>
+
+          <TabPanel value={tabValue} index={1}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {Object.entries(groupedTemplates).map(([category, categoryTemplates]) => (
+                <Box key={category}>
+                  <Typography variant="h6" gutterBottom sx={{ color: 'primary.main' }}>
+                    {category === 'hotel' ? 'Гостиничный бизнес' : category}
+                  </Typography>
+                  <Grid container spacing={2}>
+                    {categoryTemplates.map((template) => (
+                      <Grid size={{ xs: 12, sm: 6 }} key={template.id}>
+                        <Card 
+                          sx={{ 
+                            cursor: 'pointer',
+                            border: selectedTemplate?.id === template.id ? 2 : 1,
+                            borderColor: selectedTemplate?.id === template.id ? 'primary.main' : 'divider',
+                            '&:hover': { borderColor: 'primary.main' }
+                          }}
+                          onClick={() => handleTemplateSelect(template)}
+                        >
+                          <CardMedia
+                            sx={{ 
+                              height: 80, 
+                              background: 'linear-gradient(45deg, #e3f2fd 30%, #bbdefb 90%)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            <Description sx={{ fontSize: 40, color: 'primary.main' }} />
+                          </CardMedia>
+                          <CardContent sx={{ pb: 1 }}>
+                            <Typography variant="subtitle1" component="h3" gutterBottom>
+                              {template.name}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              {template.description}
+                            </Typography>
+                            <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+                              <Chip 
+                                label={`${template.rowCount}×${template.columnCount}`} 
+                                size="small" 
+                                variant="outlined" 
+                              />
+                            </Box>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                    ))}
+                  </Grid>
+                </Box>
+              ))}
+
+              {selectedTemplate && (
+                <>
+                  <Divider />
+                  <Box>
+                    <Typography variant="h6" gutterBottom>
+                      Настройки таблицы
+                    </Typography>
+                    <TextField
+                      label="Название таблицы"
+                      fullWidth
+                      variant="outlined"
+                      value={newSheetForm.name}
+                      onChange={(e) => setNewSheetForm({ ...newSheetForm, name: e.target.value })}
+                      sx={{ mb: 2 }}
+                    />
+                    <TextField
+                      label="Описание (необязательно)"
+                      fullWidth
+                      multiline
+                      rows={2}
+                      variant="outlined"
+                      value={newSheetForm.description}
+                      onChange={(e) => setNewSheetForm({ ...newSheetForm, description: e.target.value })}
+                    />
+                  </Box>
+                </>
+              )}
+            </Box>
+          </TabPanel>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreateDialogOpen(false)}>
+          <Button onClick={handleCloseDialog}>
             Отмена
           </Button>
-          <Button onClick={handleCreateSheet} variant="contained" disabled={!newSheetForm.name}>
-            Создать
+          <Button 
+            onClick={handleCreateSheet} 
+            variant="contained" 
+            disabled={!newSheetForm.name}
+          >
+            {selectedTemplate ? `Создать из шаблона "${selectedTemplate.name}"` : 'Создать'}
           </Button>
         </DialogActions>
       </Dialog>

@@ -414,8 +414,8 @@ export const setCellLevelAccess = async (req: Request, res: Response) => {
 
     // Создание или обновление доступа
     const [userSheet, created] = await UserSheet.upsert({
-      userId,
-      sheetId,
+      userId: parseInt(userId as string),
+      sheetId: parseInt(sheetId as string),
       permission: permission || 'read',
       rowRestrictions: restrictions.rows ? JSON.stringify(restrictions.rows) : null,
       columnRestrictions: restrictions.columns ? JSON.stringify(restrictions.columns) : null
@@ -606,8 +606,8 @@ export const checkCellAccess = async (req: Request, res: Response) => {
       accessLevel,
       restrictions,
       cell: { row, column },
-      user: userSheet?.user,
-      sheet: userSheet?.sheet
+              user: (userSheet as any)?.user,
+        sheet: (userSheet as any)?.sheet
     });
 
   } catch (error) {

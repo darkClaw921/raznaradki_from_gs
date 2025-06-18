@@ -130,7 +130,7 @@ export const updateGroup = async (req: Request, res: Response) => {
       // Назначаем роль новым участникам
       if (userIds.length > 0) {
         await User.update(
-          { roleId: id },
+          { roleId: parseInt(id as string) },
           { where: { id: userIds } }
         );
       }
@@ -186,7 +186,7 @@ export const addUsersToGroup = async (req: Request, res: Response) => {
     }
 
     await User.update(
-      { roleId: id },
+      { roleId: parseInt(id as string) },
       { where: { id: userIds } }
     );
 

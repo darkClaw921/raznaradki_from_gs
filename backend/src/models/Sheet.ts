@@ -8,6 +8,7 @@ export interface SheetAttributes {
   isPublic: boolean;
   rowCount: number;
   columnCount: number;
+  templateId?: number;
   settings?: any;
   createdAt?: Date;
   updatedAt?: Date;
@@ -25,6 +26,7 @@ class Sheet extends Model<SheetAttributes, SheetCreationAttributes> implements S
   public isPublic!: boolean;
   public rowCount!: number;
   public columnCount!: number;
+  public templateId?: number;
   public settings?: any;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
@@ -65,6 +67,11 @@ export const SheetFactory = (sequelize: Sequelize) => {
         type: DataTypes.INTEGER,
         defaultValue: 26,
         field: 'column_count',
+      },
+      templateId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        field: 'template_id',
       },
       settings: {
         type: DataTypes.JSON,

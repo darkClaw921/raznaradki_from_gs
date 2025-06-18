@@ -165,4 +165,17 @@ export const rolesApi = {
   getPermissions: () => api.get('/roles/permissions'),
 };
 
+// API для шаблонов таблиц
+export const templatesApi = {
+  // Получение списка шаблонов
+  getTemplates: () => api.get('/templates'),
+
+  // Получение шаблона по ID
+  getTemplate: (id: number) => api.get(`/templates/${id}`),
+
+  // Создание таблицы из шаблона
+  createSheetFromTemplate: (templateId: number, data: { name: string; description?: string }) =>
+    api.post(`/templates/${templateId}/create-sheet`, data),
+};
+
 export default api; 

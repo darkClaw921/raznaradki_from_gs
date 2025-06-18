@@ -13,6 +13,7 @@ import roleRoutes from './routes/roleRoutes';
 import sheetRoutes from './routes/sheetRoutes';
 import cellRoutes from './routes/cellRoutes';
 import groupRoutes from './routes/groupRoutes';
+import sheetTemplateRoutes from './routes/sheetTemplateRoutes';
 import { initializeSocketHandlers } from './websocket/socketHandlers';
 import { authenticateToken } from './middleware/auth';
 import { initializeAdmin } from './utils/initAdmin';
@@ -75,12 +76,16 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Маршруты
+console.log('🔧 Подключение маршрутов...');
 app.use('/api/auth', authRoutes);
 app.use('/api/users', authenticateToken, userRoutes);
 app.use('/api/roles', authenticateToken, roleRoutes);
 app.use('/api/groups', authenticateToken, groupRoutes);
 app.use('/api/sheets', authenticateToken, sheetRoutes);
 app.use('/api/cells', authenticateToken, cellRoutes);
+console.log('📋 Подключаем маршруты templates...', typeof sheetTemplateRoutes);
+app.use('/api/templates', sheetTemplateRoutes);
+console.log('✅ Все маршруты подключены');
 
 // Инициализация WebSocket обработчиков
 initializeSocketHandlers(io);
