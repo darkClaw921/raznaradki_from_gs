@@ -24,7 +24,7 @@ export const createRole = async (req: Request, res: Response) => {
     const { name, description, permissionIds = [] } = req.body;
 
     // Только админ может создавать роли
-    if (req.user.role?.name !== 'Администратор') {
+    if (req.user.role?.name !== 'admin') {
       return res.status(403).json({
         error: 'Недостаточно прав'
       });
@@ -89,7 +89,7 @@ export const updateRole = async (req: Request, res: Response) => {
     const { name, description, permissionIds } = req.body;
 
     // Только админ может обновлять роли
-    if (req.user.role?.name !== 'Администратор') {
+    if (req.user.role?.name !== 'admin') {
       return res.status(403).json({
         error: 'Недостаточно прав'
       });

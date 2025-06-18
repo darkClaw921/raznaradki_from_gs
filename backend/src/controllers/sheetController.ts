@@ -39,6 +39,7 @@ export const getSheets = async (req: Request, res: Response) => {
       include: [
         {
           model: Sheet,
+          as: 'sheet',
           include: [
             {
               model: User,
@@ -54,7 +55,7 @@ export const getSheets = async (req: Request, res: Response) => {
     const allSheets = [...sheets];
     userSheets.forEach((userSheet: any) => {
       if (!allSheets.find(sheet => sheet.id === userSheet.sheetId)) {
-        allSheets.push(userSheet.Sheet);
+        allSheets.push(userSheet.sheet);
       }
     });
 
@@ -355,6 +356,604 @@ export const addUserToSheet = async (req: Request, res: Response) => {
     console.error('Ошибка добавления пользователя к таблице:', error);
     res.status(500).json({
       error: 'Ошибка сервера при добавлении пользователя'
+    });
+  }
+};
+
+// Настройка детальных прав доступа к таблице
+export const setCellLevelAccess = async (req: Request, res: Response) => {
+  try {
+    const { id: sheetId } = req.params; // sheetId берем из URL параметров
+    const { userId, cellRestrictions, rowRestrictions, columnRestrictions, permission, cellRange } = req.body;
+
+    // Только админ или создатель таблицы может управлять доступом
+    if (req.user.role?.name !== 'admin') {
+      const sheet = await Sheet.findByPk(sheetId);
+      if (!sheet || sheet.createdBy !== req.user.id) {
+        return res.status(403).json({
+          error: 'Недостаточно прав для управления этой таблицей'
+        });
+      }
+    }
+
+    if (!userId) {
+      return res.status(400).json({
+        error: 'ID пользователя обязателен'
+      });
+    }
+
+    // Проверка существования пользователя и таблицы
+    const user = await User.findByPk(userId);
+    const sheet = await Sheet.findByPk(sheetId);
+
+    if (!user || !sheet) {
+      return res.status(404).json({
+        error: 'Пользователь или таблица не найдены'
+      });
+    }
+
+    // Формируем объекты ограничений
+    const restrictions: any = {};
+    
+    if (rowRestrictions) {
+      restrictions.rows = Array.isArray(rowRestrictions) ? rowRestrictions : [rowRestrictions];
+    }
+    
+    if (columnRestrictions) {
+      restrictions.columns = Array.isArray(columnRestrictions) ? columnRestrictions : [columnRestrictions];
+    }
+    
+    if (cellRestrictions) {
+      restrictions.cells = Array.isArray(cellRestrictions) ? cellRestrictions : [cellRestrictions];
+    }
+
+    // Обрабатываем cellRange если указан
+    if (cellRange) {
+      restrictions.cellRange = cellRange;
+    }
+
+    // Создание или обновление доступа
+    const [userSheet, created] = await UserSheet.upsert({
+      userId,
+      sheetId,
+      permission: permission || 'read',
+      rowRestrictions: restrictions.rows ? JSON.stringify(restrictions.rows) : null,
+      columnRestrictions: restrictions.columns ? JSON.stringify(restrictions.columns) : null
+    });
+
+    const result = await UserSheet.findByPk(userSheet.id, {
+      include: [
+        { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] },
+        { model: Sheet, as: 'sheet', attributes: ['id', 'name'] }
+      ]
+    });
+
+    res.json({
+      message: created ? 'Детальный доступ настроен' : 'Детальный доступ обновлен',
+      userSheet: {
+        ...result?.toJSON(),
+        parsedRestrictions: {
+          rows: result?.rowRestrictions ? JSON.parse(result.rowRestrictions) : null,
+          columns: result?.columnRestrictions ? JSON.parse(result.columnRestrictions) : null,
+          cells: restrictions.cells || null
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Ошибка настройки детального доступа:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера при настройке детального доступа'
+    });
+  }
+};
+
+// Получение детальных прав доступа к таблице
+export const getCellLevelAccess = async (req: Request, res: Response) => {
+  try {
+    const { sheetId } = req.params;
+
+    // Только админ или создатель таблицы может просматривать права доступа
+    if (req.user.role?.name !== 'admin') {
+      const sheet = await Sheet.findByPk(sheetId);
+      if (!sheet || sheet.createdBy !== req.user.id) {
+        return res.status(403).json({
+          error: 'Недостаточно прав для просмотра настроек доступа'
+        });
+      }
+    }
+
+    const userSheets = await UserSheet.findAll({
+      where: { sheetId },
+      include: [
+        { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] }
+      ]
+    });
+
+    const accessList = userSheets.map((us: any) => ({
+      user: us.user,
+      permission: us.permission,
+      restrictions: {
+        rows: us.rowRestrictions ? JSON.parse(us.rowRestrictions) : null,
+        columns: us.columnRestrictions ? JSON.parse(us.columnRestrictions) : null
+      },
+      grantedAt: us.createdAt,
+      updatedAt: us.updatedAt
+    }));
+
+    res.json({
+      sheetId,
+      accessList,
+      totalUsers: accessList.length
+    });
+
+  } catch (error) {
+    console.error('Ошибка получения прав доступа:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера при получении прав доступа'
+    });
+  }
+};
+
+// Копирование прав доступа между таблицами
+export const copySheetAccess = async (req: Request, res: Response) => {
+  try {
+    const { sourceSheetId, targetSheetId } = req.body;
+
+    // Только админ может копировать права доступа
+    if (req.user.role?.name !== 'admin') {
+      return res.status(403).json({
+        error: 'Недостаточно прав'
+      });
+    }
+
+    if (!sourceSheetId || !targetSheetId) {
+      return res.status(400).json({
+        error: 'ID исходной и целевой таблиц обязательны'
+      });
+    }
+
+    // Проверка существования таблиц
+    const sourceSheet = await Sheet.findByPk(sourceSheetId);
+    const targetSheet = await Sheet.findByPk(targetSheetId);
+
+    if (!sourceSheet || !targetSheet) {
+      return res.status(404).json({
+        error: 'Одна или обе таблицы не найдены'
+      });
+    }
+
+    // Получаем права доступа исходной таблицы
+    const sourceAccess = await UserSheet.findAll({
+      where: { sheetId: sourceSheetId }
+    });
+
+    // Копируем права доступа в целевую таблицу
+    const targetAccessData = sourceAccess.map((access: any) => ({
+      userId: access.userId,
+      sheetId: targetSheetId,
+      permission: access.permission,
+      rowRestrictions: access.rowRestrictions,
+      columnRestrictions: access.columnRestrictions
+    }));
+
+    await UserSheet.bulkCreate(targetAccessData, {
+      updateOnDuplicate: ['permission', 'rowRestrictions', 'columnRestrictions', 'updatedAt']
+    });
+
+    res.json({
+      message: `Скопировано ${sourceAccess.length} настроек доступа из таблицы "${sourceSheet.name}" в таблицу "${targetSheet.name}"`,
+      copiedAccess: sourceAccess.length
+    });
+
+  } catch (error) {
+    console.error('Ошибка копирования прав доступа:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера при копировании прав доступа'
+    });
+  }
+};
+
+// Проверка доступа пользователя к конкретной ячейке
+export const checkCellAccess = async (req: Request, res: Response) => {
+  try {
+    const { sheetId, row, column, userId } = req.body;
+
+    if (!sheetId || row === undefined || column === undefined || !userId) {
+      return res.status(400).json({
+        error: 'ID таблицы, строка, столбец и ID пользователя обязательны'
+      });
+    }
+
+    const userSheet = await UserSheet.findOne({
+      where: { userId, sheetId },
+      include: [
+        { model: User, as: 'user', attributes: ['id', 'firstName', 'lastName'] },
+        { model: Sheet, as: 'sheet', attributes: ['id', 'name'] }
+      ]
+    });
+
+    let hasAccess = false;
+    let accessLevel = 'none';
+    let restrictions: any = {};
+
+    if (userSheet) {
+      accessLevel = userSheet.permission;
+      
+      // Проверяем ограничения по строкам
+      if (userSheet.rowRestrictions) {
+        const allowedRows = JSON.parse(userSheet.rowRestrictions);
+        const rowAccess = allowedRows.includes(row) || allowedRows.includes('*');
+        restrictions.rowAccess = rowAccess;
+      } else {
+        restrictions.rowAccess = true;
+      }
+
+      // Проверяем ограничения по столбцам
+      if (userSheet.columnRestrictions) {
+        const allowedColumns = JSON.parse(userSheet.columnRestrictions);
+        const columnAccess = allowedColumns.includes(column) || allowedColumns.includes('*');
+        restrictions.columnAccess = columnAccess;
+      } else {
+        restrictions.columnAccess = true;
+      }
+
+      hasAccess = restrictions.rowAccess && restrictions.columnAccess;
+    }
+
+    res.json({
+      hasAccess,
+      accessLevel,
+      restrictions,
+      cell: { row, column },
+      user: userSheet?.user,
+      sheet: userSheet?.sheet
+    });
+
+  } catch (error) {
+    console.error('Ошибка проверки доступа к ячейке:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера при проверке доступа к ячейке'
+    });
+  }
+};
+
+// Добавление столбца
+export const addColumn = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { position } = req.body; // позиция для вставки (опционально)
+    const userId = req.user.id;
+
+    const sheet = await Sheet.findByPk(id);
+    if (!sheet) {
+      return res.status(404).json({
+        error: 'Таблица не найдена'
+      });
+    }
+
+    // Проверка прав на редактирование структуры
+    const userSheet = await UserSheet.findOne({
+      where: { userId, sheetId: id }
+    });
+
+    const hasAdminAccess = sheet.createdBy === userId || 
+                          (userSheet && userSheet.permission === 'admin');
+
+    if (!hasAdminAccess) {
+      return res.status(403).json({
+        error: 'Нет прав на изменение структуры таблицы'
+      });
+    }
+
+    // Увеличиваем количество столбцов
+    await sheet.update({
+      columnCount: sheet.columnCount + 1
+    });
+
+    res.json({
+      message: 'Столбец добавлен',
+      sheet: await Sheet.findByPk(id)
+    });
+
+  } catch (error) {
+    console.error('Ошибка добавления столбца:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера'
+    });
+  }
+};
+
+// Добавление строки
+export const addRow = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { position } = req.body; // позиция для вставки (опционально)
+    const userId = req.user.id;
+
+    const sheet = await Sheet.findByPk(id);
+    if (!sheet) {
+      return res.status(404).json({
+        error: 'Таблица не найдена'
+      });
+    }
+
+    // Проверка прав на редактирование структуры
+    const userSheet = await UserSheet.findOne({
+      where: { userId, sheetId: id }
+    });
+
+    const hasAdminAccess = sheet.createdBy === userId || 
+                          (userSheet && userSheet.permission === 'admin');
+
+    if (!hasAdminAccess) {
+      return res.status(403).json({
+        error: 'Нет прав на изменение структуры таблицы'
+      });
+    }
+
+    // Увеличиваем количество строк
+    await sheet.update({
+      rowCount: sheet.rowCount + 1
+    });
+
+    res.json({
+      message: 'Строка добавлена',
+      sheet: await Sheet.findByPk(id)
+    });
+
+  } catch (error) {
+    console.error('Ошибка добавления строки:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера'
+    });
+  }
+};
+
+// Получение участников таблицы
+export const getSheetMembers = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const sheet = await Sheet.findByPk(id);
+    if (!sheet) {
+      return res.status(404).json({
+        error: 'Таблица не найдена'
+      });
+    }
+
+    // Проверка доступа к таблице
+    const userSheet = await UserSheet.findOne({
+      where: { userId, sheetId: id }
+    });
+
+    const hasAccess = sheet.createdBy === userId || userSheet;
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        error: 'Нет доступа к таблице'
+      });
+    }
+
+    // Получаем всех участников
+    const members = await UserSheet.findAll({
+      where: { sheetId: id },
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'firstName', 'lastName', 'email']
+        }
+      ]
+    });
+
+    // Добавляем создателя таблицы
+    const creator = await User.findByPk(sheet.createdBy, {
+      attributes: ['id', 'firstName', 'lastName', 'email']
+    });
+
+    res.json({
+      members: [
+        {
+          user: creator,
+          permission: 'owner',
+          joinedAt: sheet.createdAt
+        },
+        ...members.map((member: any) => ({
+          user: member.user,
+          permission: member.permission,
+          joinedAt: member.createdAt
+        }))
+      ]
+    });
+
+  } catch (error) {
+    console.error('Ошибка получения участников:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера'
+    });
+  }
+};
+
+// Приглашение участника
+export const inviteMember = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { email, permission = 'read' } = req.body;
+    const userId = req.user.id;
+
+    const sheet = await Sheet.findByPk(id);
+    if (!sheet) {
+      return res.status(404).json({
+        error: 'Таблица не найдена'
+      });
+    }
+
+    // Проверка прав на приглашение
+    const userSheet = await UserSheet.findOne({
+      where: { userId, sheetId: id }
+    });
+
+    const hasAdminAccess = sheet.createdBy === userId || 
+                          (userSheet && ['admin'].includes(userSheet.permission));
+
+    if (!hasAdminAccess) {
+      return res.status(403).json({
+        error: 'Нет прав на приглашение участников'
+      });
+    }
+
+    // Поиск пользователя по email
+    const invitedUser = await User.findOne({
+      where: { email }
+    });
+
+    if (!invitedUser) {
+      return res.status(404).json({
+        error: 'Пользователь с таким email не найден'
+      });
+    }
+
+    // Проверка, не является ли уже участником
+    const existingMember = await UserSheet.findOne({
+      where: { userId: invitedUser.id, sheetId: id }
+    });
+
+    if (existingMember) {
+      return res.status(400).json({
+        error: 'Пользователь уже является участником таблицы'
+      });
+    }
+
+    // Создаем доступ
+    await UserSheet.create({
+      userId: invitedUser.id,
+      sheetId: parseInt(id),
+      permission
+    });
+
+    res.json({
+      message: 'Участник приглашен',
+      member: {
+        user: {
+          id: invitedUser.id,
+          firstName: invitedUser.firstName,
+          lastName: invitedUser.lastName,
+          email: invitedUser.email
+        },
+        permission
+      }
+    });
+
+  } catch (error) {
+    console.error('Ошибка приглашения участника:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера'
+    });
+  }
+};
+
+// Изменение размеров столбца
+export const resizeColumn = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { column, width } = req.body;
+    const userId = req.user.id;
+
+    const sheet = await Sheet.findByPk(id);
+    if (!sheet) {
+      return res.status(404).json({
+        error: 'Таблица не найдена'
+      });
+    }
+
+    // Проверка доступа к таблице
+    const userSheet = await UserSheet.findOne({
+      where: { userId, sheetId: id }
+    });
+
+    const hasAccess = sheet.createdBy === userId || userSheet;
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        error: 'Нет доступа к таблице'
+      });
+    }
+
+    // Обновляем настройки размеров
+    const currentSettings = sheet.settings || {};
+    const columnSizes = currentSettings.columnSizes || {};
+    columnSizes[column] = width;
+
+    await sheet.update({
+      settings: {
+        ...currentSettings,
+        columnSizes
+      }
+    });
+
+    res.json({
+      message: 'Размер столбца изменен',
+      columnSizes
+    });
+
+  } catch (error) {
+    console.error('Ошибка изменения размера столбца:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера'
+    });
+  }
+};
+
+// Изменение размеров строки
+export const resizeRow = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { row, height } = req.body;
+    const userId = req.user.id;
+
+    const sheet = await Sheet.findByPk(id);
+    if (!sheet) {
+      return res.status(404).json({
+        error: 'Таблица не найдена'
+      });
+    }
+
+    // Проверка доступа к таблице
+    const userSheet = await UserSheet.findOne({
+      where: { userId, sheetId: id }
+    });
+
+    const hasAccess = sheet.createdBy === userId || userSheet;
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        error: 'Нет доступа к таблице'
+      });
+    }
+
+    // Обновляем настройки размеров
+    const currentSettings = sheet.settings || {};
+    const rowSizes = currentSettings.rowSizes || {};
+    rowSizes[row] = height;
+
+    await sheet.update({
+      settings: {
+        ...currentSettings,
+        rowSizes
+      }
+    });
+
+    res.json({
+      message: 'Размер строки изменен',
+      rowSizes
+    });
+
+  } catch (error) {
+    console.error('Ошибка изменения размера строки:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера'
     });
   }
 }; 

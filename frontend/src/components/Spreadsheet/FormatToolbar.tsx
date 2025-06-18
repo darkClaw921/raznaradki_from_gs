@@ -1,0 +1,329 @@
+import React, { useState } from 'react';
+import {
+  Box,
+  Paper,
+  IconButton,
+  Divider,
+  Select,
+  MenuItem,
+  FormControl,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
+  Menu,
+  Button
+} from '@mui/material';
+import {
+  FormatBold,
+  FormatItalic,
+  FormatUnderlined,
+  FormatAlignLeft,
+  FormatAlignCenter,
+  FormatAlignRight,
+  BorderAll,
+  BorderOuter,
+  BorderInner,
+  Palette,
+  FontDownload,
+  History,
+  Add
+} from '@mui/icons-material';
+
+interface FormatToolbarProps {
+  selectedCells: { startRow: number; endRow: number; startColumn: number; endColumn: number } | null;
+  onFormat: (format: any) => void;
+  onAddRow: () => void;
+  onAddColumn: () => void;
+  onShowHistory: (row: number, column: number) => void;
+  userPermissions: string;
+}
+
+const FormatToolbar: React.FC<FormatToolbarProps> = ({
+  selectedCells,
+  onFormat,
+  onAddRow,
+  onAddColumn,
+  onShowHistory,
+  userPermissions
+}) => {
+  const [fontFamily, setFontFamily] = useState('Arial');
+  const [fontSize, setFontSize] = useState(12);
+  const [textAlign, setTextAlign] = useState('left');
+  const [colorAnchor, setColorAnchor] = useState<null | HTMLElement>(null);
+  const [borderAnchor, setBorderAnchor] = useState<null | HTMLElement>(null);
+
+  const fontFamilies = [
+    'Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Verdana', 'Georgia'
+  ];
+
+  const fontSizes = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72];
+
+  const colors = [
+    '#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF',
+    '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080'
+  ];
+
+  const borderStyles = [
+    { name: 'Все границы', value: 'all', icon: <BorderAll /> },
+    { name: 'Внешние границы', value: 'outer', icon: <BorderOuter /> },
+    { name: 'Внутренние границы', value: 'inner', icon: <BorderInner /> }
+  ];
+
+  const handleFontFormat = (type: string, value: any) => {
+    const format = { [type]: value };
+    onFormat(format);
+  };
+
+  const handleBorderFormat = (borderType: string) => {
+    const format = {
+      border: {
+        type: borderType,
+        style: 'solid',
+        width: 1,
+        color: '#000000'
+      }
+    };
+    onFormat(format);
+    setBorderAnchor(null);
+  };
+
+  const handleColorFormat = (colorType: 'textColor' | 'backgroundColor', color: string) => {
+    const format = { [colorType]: color };
+    onFormat(format);
+    setColorAnchor(null);
+  };
+
+  const handleAlignChange = (event: React.MouseEvent<HTMLElement>, newAlignment: string) => {
+    if (newAlignment !== null) {
+      setTextAlign(newAlignment);
+      handleFontFormat('textAlign', newAlignment);
+    }
+  };
+
+  const handleShowHistory = () => {
+    if (selectedCells && selectedCells.startRow === selectedCells.endRow && 
+        selectedCells.startColumn === selectedCells.endColumn) {
+      onShowHistory(selectedCells.startRow, selectedCells.startColumn);
+    }
+  };
+
+  const isReadOnly = userPermissions === 'read';
+  const canEditStructure = userPermissions === 'admin';
+
+  return (
+    <Paper 
+      sx={{ 
+        p: 1, 
+        mb: 1, 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: 1,
+        flexWrap: 'wrap'
+      }}
+    >
+      {/* Добавление строк и столбцов */}
+      {canEditStructure && (
+        <>
+          <Tooltip title="Добавить строку">
+            <IconButton onClick={onAddRow} size="small">
+              <Add />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Добавить столбец">
+            <IconButton onClick={onAddColumn} size="small">
+              <Add />
+            </IconButton>
+          </Tooltip>
+          <Divider orientation="vertical" flexItem />
+        </>
+      )}
+
+      {/* Форматирование шрифта */}
+      {!isReadOnly && (
+        <>
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <Select
+              value={fontFamily}
+              onChange={(e) => {
+                setFontFamily(e.target.value);
+                handleFontFormat('fontFamily', e.target.value);
+              }}
+            >
+              {fontFamilies.map((font) => (
+                <MenuItem key={font} value={font}>
+                  {font}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" sx={{ minWidth: 60 }}>
+            <Select
+              value={fontSize}
+              onChange={(e) => {
+                setFontSize(Number(e.target.value));
+                handleFontFormat('fontSize', Number(e.target.value));
+              }}
+            >
+              {fontSizes.map((size) => (
+                <MenuItem key={size} value={size}>
+                  {size}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <Divider orientation="vertical" flexItem />
+
+          {/* Стили текста */}
+          <Tooltip title="Жирный">
+            <IconButton 
+              onClick={() => handleFontFormat('fontWeight', 'bold')}
+              size="small"
+            >
+              <FormatBold />
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title="Курсив">
+            <IconButton 
+              onClick={() => handleFontFormat('fontStyle', 'italic')}
+              size="small"
+            >
+              <FormatItalic />
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title="Подчеркнутый">
+            <IconButton 
+              onClick={() => handleFontFormat('textDecoration', 'underline')}
+              size="small"
+            >
+              <FormatUnderlined />
+            </IconButton>
+          </Tooltip>
+
+          <Divider orientation="vertical" flexItem />
+
+          {/* Выравнивание */}
+          <ToggleButtonGroup
+            value={textAlign}
+            exclusive
+            onChange={handleAlignChange}
+            size="small"
+          >
+            <ToggleButton value="left">
+              <FormatAlignLeft />
+            </ToggleButton>
+            <ToggleButton value="center">
+              <FormatAlignCenter />
+            </ToggleButton>
+            <ToggleButton value="right">
+              <FormatAlignRight />
+            </ToggleButton>
+          </ToggleButtonGroup>
+
+          <Divider orientation="vertical" flexItem />
+
+          {/* Цвета */}
+          <Tooltip title="Цвет текста и фона">
+            <IconButton 
+              onClick={(e) => setColorAnchor(e.currentTarget)}
+              size="small"
+            >
+              <Palette />
+            </IconButton>
+          </Tooltip>
+
+          <Menu
+            anchorEl={colorAnchor}
+            open={Boolean(colorAnchor)}
+            onClose={() => setColorAnchor(null)}
+          >
+            <Box sx={{ p: 2, maxWidth: 200 }}>
+              <Box sx={{ mb: 1, fontWeight: 'bold' }}>Цвет текста</Box>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 2 }}>
+                {colors.map((color) => (
+                  <Box
+                    key={`text-${color}`}
+                    sx={{
+                      width: 20,
+                      height: 20,
+                      backgroundColor: color,
+                      border: '1px solid #ccc',
+                      cursor: 'pointer',
+                      '&:hover': { transform: 'scale(1.1)' }
+                    }}
+                    onClick={() => handleColorFormat('textColor', color)}
+                  />
+                ))}
+              </Box>
+              <Box sx={{ mb: 1, fontWeight: 'bold' }}>Цвет фона</Box>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                {colors.map((color) => (
+                  <Box
+                    key={`bg-${color}`}
+                    sx={{
+                      width: 20,
+                      height: 20,
+                      backgroundColor: color,
+                      border: '1px solid #ccc',
+                      cursor: 'pointer',
+                      '&:hover': { transform: 'scale(1.1)' }
+                    }}
+                    onClick={() => handleColorFormat('backgroundColor', color)}
+                  />
+                ))}
+              </Box>
+            </Box>
+          </Menu>
+
+          {/* Границы */}
+          <Tooltip title="Границы">
+            <IconButton 
+              onClick={(e) => setBorderAnchor(e.currentTarget)}
+              size="small"
+            >
+              <BorderAll />
+            </IconButton>
+          </Tooltip>
+
+          <Menu
+            anchorEl={borderAnchor}
+            open={Boolean(borderAnchor)}
+            onClose={() => setBorderAnchor(null)}
+          >
+            <Box sx={{ p: 1 }}>
+              {borderStyles.map((style) => (
+                <Button
+                  key={style.value}
+                  startIcon={style.icon}
+                  onClick={() => handleBorderFormat(style.value)}
+                  sx={{ display: 'block', width: '100%', mb: 0.5 }}
+                >
+                  {style.name}
+                </Button>
+              ))}
+            </Box>
+          </Menu>
+
+          <Divider orientation="vertical" flexItem />
+        </>
+      )}
+
+      {/* История */}
+      <Tooltip title="История изменений ячейки">
+        <IconButton 
+          onClick={handleShowHistory}
+          size="small"
+          disabled={!selectedCells || selectedCells.startRow !== selectedCells.endRow || 
+                   selectedCells.startColumn !== selectedCells.endColumn}
+        >
+          <History />
+        </IconButton>
+      </Tooltip>
+    </Paper>
+  );
+};
+
+export default FormatToolbar; 

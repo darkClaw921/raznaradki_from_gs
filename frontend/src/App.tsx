@@ -7,6 +7,7 @@ import { store } from './store';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Sheet from './pages/Sheet';
+import AdminPanel from './pages/AdminPanel';
 import PrivateRoute from './components/PrivateRoute';
 import { useSelector } from 'react-redux';
 import { RootState } from './store';
@@ -53,6 +54,14 @@ function AppContent() {
             element={
               <PrivateRoute>
                 <Sheet />
+              </PrivateRoute>
+            } 
+          />
+          <Route 
+            path="/admin" 
+            element={
+              <PrivateRoute>
+                <AdminPanel />
               </PrivateRoute>
             } 
           />

@@ -96,13 +96,47 @@ export const sheetsApi = {
 // Cells API
 export const cellsApi = {
   getCell: (sheetId: string, row: number, column: number) =>
-    api.get(`/cells/${sheetId}/${row}/${column}`),
+    api.get(`/cells/sheets/${sheetId}/cells/${row}/${column}`),
   
-  updateCell: (sheetId: string, row: number, column: number, cellData: {
-    value?: string;
-    formula?: string;
-    format?: any;
-  }) => api.put(`/cells/${sheetId}/${row}/${column}`, cellData),
+  updateCell: (sheetId: string, row: number, column: number, cellData: { 
+    value?: string; 
+    formula?: string; 
+    format?: any; 
+  }) =>
+    api.put(`/cells/sheets/${sheetId}/cells/${row}/${column}`, cellData),
+
+  getCellHistory: (sheetId: number, row: number, column: number, limit = 50, offset = 0) =>
+    api.get(`/cells/sheets/${sheetId}/cells/${row}/${column}/history?limit=${limit}&offset=${offset}`),
+
+  formatCells: (sheetId: number, format: any, startRow: number, endRow: number, startColumn: number, endColumn: number) =>
+    api.post(`/cells/sheets/${sheetId}/format`, {
+      startRow,
+      endRow, 
+      startColumn,
+      endColumn,
+      format
+    })
+};
+
+// Sheets API (дополнительные методы)
+export const sheetsExtendedApi = {
+  addColumn: (sheetId: string, position?: number) =>
+    api.post(`/sheets/${sheetId}/columns`, { position }),
+
+  addRow: (sheetId: string, position?: number) =>
+    api.post(`/sheets/${sheetId}/rows`, { position }),
+
+  getMembers: (sheetId: string) =>
+    api.get(`/sheets/${sheetId}/members`),
+
+  inviteMember: (sheetId: string, email: string, permission = 'read') =>
+    api.post(`/sheets/${sheetId}/invite`, { email, permission }),
+
+  resizeColumn: (sheetId: string, column: number, width: number) =>
+    api.patch(`/sheets/${sheetId}/columns/resize`, { column, width }),
+
+  resizeRow: (sheetId: string, row: number, height: number) =>
+    api.patch(`/sheets/${sheetId}/rows/resize`, { row, height })
 };
 
 // Users API

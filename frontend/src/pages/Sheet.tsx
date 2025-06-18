@@ -19,6 +19,7 @@ import { AppDispatch, RootState } from '../store';
 import { setCurrentSheet, setLoading } from '../store/sheetSlice';
 import { sheetsApi } from '../services/api';
 import Spreadsheet from '../components/Spreadsheet/Spreadsheet';
+import MembersDialog from '../components/Spreadsheet/MembersDialog';
 
 const Sheet: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -28,6 +29,7 @@ const Sheet: React.FC = () => {
   const { user } = useSelector((state: RootState) => state.auth);
 
   const [userPermissions, setUserPermissions] = useState<string>('read');
+  const [membersDialogOpen, setMembersDialogOpen] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -47,6 +49,15 @@ const Sheet: React.FC = () => {
     } finally {
       dispatch(setLoading(false));
     }
+  };
+
+  const handleOpenMembers = () => {
+    setMembersDialogOpen(true);
+  };
+
+  const handleShareSheet = () => {
+    // Функция "Поделиться" - открываем диалог участников
+    setMembersDialogOpen(true);
   };
 
   if (loading) {
@@ -75,6 +86,8 @@ const Sheet: React.FC = () => {
     );
   }
 
+  const canManageAccess = userPermissions === 'admin' || userPermissions === 'owner';
+
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <AppBar position="static" color="default" elevation={1}>
@@ -92,23 +105,26 @@ const Sheet: React.FC = () => {
           </Typography>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {userPermissions === 'admin' && (
-              <>
-                <Button
-                  startIcon={<People />}
-                  variant="outlined"
-                  size="small"
-                >
-                  Участники
-                </Button>
-                <Button
-                  startIcon={<Share />}
-                  variant="outlined"
-                  size="small"
-                >
-                  Поделиться
-                </Button>
-              </>
+            {/* Кнопка участников - доступна всем для просмотра */}
+            <Button
+              startIcon={<People />}
+              variant="outlined"
+              size="small"
+              onClick={handleOpenMembers}
+            >
+              Участники
+            </Button>
+
+            {/* Кнопка поделиться - только для администраторов */}
+            {canManageAccess && (
+              <Button
+                startIcon={<Share />}
+                variant="outlined"
+                size="small"
+                onClick={handleShareSheet}
+              >
+                Поделиться
+              </Button>
             )}
             
             <Typography variant="caption" sx={{ ml: 2 }}>
@@ -124,6 +140,14 @@ const Sheet: React.FC = () => {
           userPermissions={userPermissions}
         />
       </Box>
+
+      {/* Диалог управления участниками */}
+      <MembersDialog
+        open={membersDialogOpen}
+        onClose={() => setMembersDialogOpen(false)}
+        sheetId={id || ''}
+        userPermissions={userPermissions}
+      />
     </Box>
   );
 };

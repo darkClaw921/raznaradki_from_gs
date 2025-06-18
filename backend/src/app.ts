@@ -12,6 +12,7 @@ import userRoutes from './routes/userRoutes';
 import roleRoutes from './routes/roleRoutes';
 import sheetRoutes from './routes/sheetRoutes';
 import cellRoutes from './routes/cellRoutes';
+import groupRoutes from './routes/groupRoutes';
 import { initializeSocketHandlers } from './websocket/socketHandlers';
 import { authenticateToken } from './middleware/auth';
 import { initializeAdmin } from './utils/initAdmin';
@@ -25,6 +26,9 @@ if (!process.env.ADMIN_EMAIL) {
 
 const app = express();
 const server = createServer(app);
+
+// Настройка доверия к прокси для работы с nginx
+app.set('trust proxy', true);
 
 // Разрешенные origins для CORS
 const allowedOrigins = [
@@ -74,6 +78,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/auth', authRoutes);
 app.use('/api/users', authenticateToken, userRoutes);
 app.use('/api/roles', authenticateToken, roleRoutes);
+app.use('/api/groups', authenticateToken, groupRoutes);
 app.use('/api/sheets', authenticateToken, sheetRoutes);
 app.use('/api/cells', authenticateToken, cellRoutes);
 

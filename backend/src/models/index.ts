@@ -6,6 +6,7 @@ import { SheetFactory } from './Sheet';
 import { CellFactory } from './Cell';
 import { UserSheetFactory } from './UserSheet';
 import { RolePermissionFactory } from './RolePermission';
+import { CellHistoryFactory } from './CellHistory';
 
 // Инициализация Sequelize
 const sequelize = new Sequelize({
@@ -32,6 +33,7 @@ const Sheet: any = SheetFactory(sequelize);
 const Cell: any = CellFactory(sequelize);
 const UserSheet: any = UserSheetFactory(sequelize);
 const RolePermission: any = RolePermissionFactory(sequelize);
+const CellHistory: any = CellHistoryFactory(sequelize);
 
 // Определение ассоциаций
 const setupAssociations = () => {
@@ -74,6 +76,26 @@ const setupAssociations = () => {
   // User - Sheet (создатель)
   Sheet.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
   User.hasMany(Sheet, { foreignKey: 'createdBy', as: 'createdSheets' });
+
+  // Прямые ассоциации для UserSheet (нужно для include)
+  UserSheet.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+  UserSheet.belongsTo(Sheet, { foreignKey: 'sheetId', as: 'sheet' });
+  User.hasMany(UserSheet, { foreignKey: 'userId', as: 'userSheets' });
+  Sheet.hasMany(UserSheet, { foreignKey: 'sheetId', as: 'userSheets' });
+
+  // Прямые ассоциации для RolePermission (нужно для include)
+  RolePermission.belongsTo(Role, { foreignKey: 'roleId', as: 'role' });
+  RolePermission.belongsTo(Permission, { foreignKey: 'permissionId', as: 'permission' });
+  Role.hasMany(RolePermission, { foreignKey: 'roleId', as: 'rolePermissions' });
+  Permission.hasMany(RolePermission, { foreignKey: 'permissionId', as: 'permissionRoles' });
+
+  // Ассоциации для CellHistory
+  CellHistory.belongsTo(Cell, { foreignKey: 'cellId', as: 'cell' });
+  CellHistory.belongsTo(User, { foreignKey: 'changedBy', as: 'changedByUser' });
+  CellHistory.belongsTo(Sheet, { foreignKey: 'sheetId', as: 'sheet' });
+  Cell.hasMany(CellHistory, { foreignKey: 'cellId', as: 'history' });
+  User.hasMany(CellHistory, { foreignKey: 'changedBy', as: 'cellChanges' });
+  Sheet.hasMany(CellHistory, { foreignKey: 'sheetId', as: 'cellHistory' });
 };
 
 setupAssociations();
@@ -86,5 +108,6 @@ export {
   Sheet,
   Cell,
   UserSheet,
-  RolePermission
+  RolePermission,
+  CellHistory
 }; 

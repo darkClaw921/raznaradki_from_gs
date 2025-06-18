@@ -107,11 +107,36 @@ CREATE TABLE user_sheets (
     UNIQUE KEY unique_user_sheet (user_id, sheet_id)
 );
 
+-- Таблица истории изменений ячеек
+CREATE TABLE cell_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    cell_id INT NOT NULL,
+    sheet_id INT NOT NULL,
+    row INT NOT NULL,
+    column INT NOT NULL,
+    old_value TEXT COMMENT 'Предыдущее значение ячейки',
+    new_value TEXT COMMENT 'Новое значение ячейки',
+    old_formula TEXT COMMENT 'Предыдущая формула ячейки',
+    new_formula TEXT COMMENT 'Новая формула ячейки',
+    old_format JSON COMMENT 'Предыдущее форматирование ячейки',
+    new_format JSON COMMENT 'Новое форматирование ячейки',
+    changed_by INT NOT NULL,
+    change_type ENUM('value', 'formula', 'format', 'create', 'delete') NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (cell_id) REFERENCES cells(id) ON DELETE CASCADE,
+    FOREIGN KEY (sheet_id) REFERENCES sheets(id) ON DELETE CASCADE,
+    FOREIGN KEY (changed_by) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_cell_history_cell (cell_id),
+    INDEX idx_cell_history_sheet_position (sheet_id, row, column),
+    INDEX idx_cell_history_user (changed_by),
+    INDEX idx_cell_history_created (created_at)
+);
+
 -- Вставка базовых ролей
 INSERT INTO roles (name, description, is_system) VALUES
-('Администратор', 'Полный доступ ко всем функциям системы', TRUE),
-('Редактор', 'Может создавать и редактировать таблицы', TRUE),
-('Пользователь', 'Базовый доступ к просмотру и редактированию назначенных таблиц', TRUE);
+('admin', 'Полный доступ ко всем функциям системы', TRUE),
+('editor', 'Может создавать и редактировать таблицы', TRUE),
+('user', 'Базовый доступ к просмотру и редактированию назначенных таблиц', TRUE);
 
 -- Вставка базовых разрешений
 INSERT INTO permissions (name, description, resource, action) VALUES

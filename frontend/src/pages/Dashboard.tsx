@@ -28,6 +28,7 @@ import {
   MoreVert as MoreVertIcon,
   AccountCircle,
   ExitToApp as LogoutIcon,
+  AdminPanelSettings,
 } from '@mui/icons-material';
 import { AppDispatch, RootState } from '../store';
 import { logout } from '../store/authSlice';
@@ -127,13 +128,24 @@ const Dashboard: React.FC = () => {
           <Typography variant="h4" component="h1">
             Мои таблицы
           </Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setCreateDialogOpen(true)}
-          >
-            Создать таблицу
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            {user?.role?.name === 'admin' && (
+              <Button
+                variant="outlined"
+                startIcon={<AdminPanelSettings />}
+                onClick={() => navigate('/admin')}
+              >
+                Панель администратора
+              </Button>
+            )}
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setCreateDialogOpen(true)}
+            >
+              Создать таблицу
+            </Button>
+          </Box>
         </Box>
 
         {loading ? (

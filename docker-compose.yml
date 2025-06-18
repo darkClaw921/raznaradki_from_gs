@@ -55,7 +55,7 @@ services:
     networks:
       - dmd_network
 
-  # Frontend React App - Production Mode
+  # Frontend React App - Development Mode for testing
   frontend:
     build:
       context: ./frontend
@@ -63,9 +63,9 @@ services:
     container_name: dmd_frontend
     restart: unless-stopped
     environment:
-      NODE_ENV: production
-      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost/api}
-      REACT_APP_WS_URL: ${REACT_APP_WS_URL:-ws://localhost}
+      NODE_ENV: development
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:3001/api}
+      REACT_APP_WS_URL: ${REACT_APP_WS_URL:-ws://localhost:3001}
     ports:
       - "3000:3000"
     networks:
