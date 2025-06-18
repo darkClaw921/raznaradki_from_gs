@@ -1,0 +1,25 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const sheetController_1 = require("../controllers/sheetController");
+const auth_1 = require("../middleware/auth");
+const auth_2 = require("../middleware/auth");
+const router = (0, express_1.Router)();
+router.get('/', sheetController_1.getSheets);
+router.post('/', sheetController_1.createSheet);
+router.get('/:id', sheetController_1.getSheet);
+router.put('/:id', sheetController_1.updateSheet);
+router.delete('/:id', sheetController_1.deleteSheet);
+router.post('/:id/users', sheetController_1.addUserToSheet);
+router.post('/:id/access/cell', (0, auth_1.requireRole)(['admin']), sheetController_1.setCellLevelAccess);
+router.get('/:id/access', sheetController_1.getCellLevelAccess);
+router.post('/:id/access/copy', (0, auth_1.requireRole)(['admin']), sheetController_1.copySheetAccess);
+router.post('/access/check', sheetController_1.checkCellAccess);
+router.post('/:id/columns', auth_2.authenticateToken, sheetController_1.addColumn);
+router.post('/:id/rows', auth_2.authenticateToken, sheetController_1.addRow);
+router.get('/:id/members', auth_2.authenticateToken, sheetController_1.getSheetMembers);
+router.post('/:id/invite', auth_2.authenticateToken, sheetController_1.inviteMember);
+router.patch('/:id/columns/resize', auth_2.authenticateToken, sheetController_1.resizeColumn);
+router.patch('/:id/rows/resize', auth_2.authenticateToken, sheetController_1.resizeRow);
+exports.default = router;
+//# sourceMappingURL=sheetRoutes.js.map

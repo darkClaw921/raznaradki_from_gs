@@ -190,7 +190,7 @@ const GroupManagement: React.FC = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`/api/groups/${selectedGroup.id}`, {
-        method: 'PATCH',
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`

@@ -1,0 +1,17 @@
+import { Request, Response } from 'express';
+export declare const getSheets: (req: Request, res: Response) => Promise<void>;
+export declare const getSheet: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const createSheet: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const updateSheet: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const deleteSheet: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const addUserToSheet: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const setCellLevelAccess: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const getCellLevelAccess: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const copySheetAccess: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const checkCellAccess: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const addColumn: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const addRow: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const getSheetMembers: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const inviteMember: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const resizeColumn: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;
+export declare const resizeRow: (req: Request, res: Response) => Promise<Response<any, Record<string, any>> | undefined>;

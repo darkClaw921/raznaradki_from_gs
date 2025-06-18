@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { User, Role, UserSheet, Sheet } from '../models';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 
 // Получение списка пользователей
 export const getUsers = async (req: Request, res: Response) => {
@@ -166,9 +167,13 @@ export const createUser = async (req: Request, res: Response) => {
     // Генерация временного пароля если не указан
     const tempPassword = password || crypto.randomBytes(8).toString('hex');
 
+    // Хеширование пароля
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(tempPassword, saltRounds);
+
     const user = await User.create({
       email,
-      password: tempPassword,
+      password: hashedPassword,
       firstName,
       lastName,
       roleId: userRoleId,

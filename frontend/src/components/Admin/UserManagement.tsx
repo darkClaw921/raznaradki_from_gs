@@ -60,9 +60,9 @@ const UserManagement: React.FC = () => {
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [bulkEditDialogOpen, setBulkEditDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -226,19 +226,20 @@ const UserManagement: React.FC = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          firstName: editForm.firstName,
-          lastName: editForm.lastName,
-          roleId: parseInt(editForm.roleId),
-          isActive: editForm.isActive
-        })
+        body: JSON.stringify(editForm)
       });
 
       if (response.ok) {
-        const data = await response.json();
         setSuccess('Пользователь обновлен успешно');
         setEditDialogOpen(false);
         setSelectedUser(null);
+        setEditForm({
+          firstName: '',
+          lastName: '',
+          email: '',
+          roleId: '',
+          isActive: true
+        });
         loadUsers();
       } else {
         const errorData = await response.json();
@@ -410,12 +411,7 @@ const UserManagement: React.FC = () => {
                   {new Date(user.createdAt).toLocaleDateString()}
                 </TableCell>
                 <TableCell>
-                  <IconButton 
-                    size="small" 
-                    color="primary"
-                    onClick={() => openEditDialog(user)}
-                    title="Редактировать пользователя"
-                  >
+                  <IconButton size="small" color="primary" onClick={() => openEditDialog(user)}>
                     <Edit />
                   </IconButton>
                   <IconButton size="small" color="secondary">
@@ -489,61 +485,6 @@ const UserManagement: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Диалог редактирования пользователя */}
-      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Редактировать пользователя</DialogTitle>
-        <DialogContent>
-          <Box display="flex" flexDirection="column" gap={2} pt={1}>
-            <TextField
-              label="Имя"
-              value={editForm.firstName}
-              onChange={(e) => setEditForm({...editForm, firstName: e.target.value})}
-              fullWidth
-            />
-            <TextField
-              label="Фамилия"
-              value={editForm.lastName}
-              onChange={(e) => setEditForm({...editForm, lastName: e.target.value})}
-              fullWidth
-            />
-            <TextField
-              label="Email"
-              type="email"
-              value={editForm.email}
-              disabled
-              fullWidth
-              helperText="Email нельзя изменить"
-            />
-            <TextField
-              select
-              label="Роль"
-              value={editForm.roleId}
-              onChange={(e) => setEditForm({...editForm, roleId: e.target.value})}
-              fullWidth
-            >
-              {roles.map((role) => (
-                <MenuItem key={role.id} value={role.id.toString()}>
-                  {role.description} ({role.name})
-                </MenuItem>
-              ))}
-            </TextField>
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={editForm.isActive}
-                  onChange={(e) => setEditForm({...editForm, isActive: e.target.checked})}
-                />
-              }
-              label="Активный пользователь"
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditDialogOpen(false)}>Отмена</Button>
-          <Button onClick={handleEditUser} variant="contained">Сохранить</Button>
-        </DialogActions>
-      </Dialog>
-
       {/* Диалог приглашения */}
       <Dialog open={inviteDialogOpen} onClose={() => setInviteDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Пригласить пользователя</DialogTitle>
@@ -582,6 +523,61 @@ const UserManagement: React.FC = () => {
         <DialogActions>
           <Button onClick={() => setInviteDialogOpen(false)}>Отмена</Button>
           <Button onClick={handleInviteUser} variant="contained">Отправить приглашение</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Диалог редактирования пользователя */}
+      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Редактировать пользователя</DialogTitle>
+        <DialogContent>
+          <Box display="flex" flexDirection="column" gap={2} pt={1}>
+            <TextField
+              label="Имя"
+              value={editForm.firstName}
+              onChange={(e) => setEditForm({...editForm, firstName: e.target.value})}
+              fullWidth
+            />
+            <TextField
+              label="Фамилия"
+              value={editForm.lastName}
+              onChange={(e) => setEditForm({...editForm, lastName: e.target.value})}
+              fullWidth
+            />
+            <TextField
+              label="Email"
+              type="email"
+              value={editForm.email}
+              onChange={(e) => setEditForm({...editForm, email: e.target.value})}
+              fullWidth
+              disabled
+            />
+            <TextField
+              select
+              label="Роль"
+              value={editForm.roleId}
+              onChange={(e) => setEditForm({...editForm, roleId: e.target.value})}
+              fullWidth
+            >
+              {roles.map((role) => (
+                <MenuItem key={role.id} value={role.id.toString()}>
+                  {role.description} ({role.name})
+                </MenuItem>
+              ))}
+            </TextField>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={editForm.isActive}
+                  onChange={(e) => setEditForm({...editForm, isActive: e.target.checked})}
+                />
+              }
+              label="Активный пользователь"
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditDialogOpen(false)}>Отмена</Button>
+          <Button onClick={handleEditUser} variant="contained">Сохранить</Button>
         </DialogActions>
       </Dialog>
     </Box>
