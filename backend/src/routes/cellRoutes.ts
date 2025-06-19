@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
-import { updateCell, getCell, getCellHistory, formatCells } from '../controllers/cellController';
+import { updateCell, getCell, getCellHistory, formatCells, updateCellsBatch } from '../controllers/cellController';
 
 const router = Router();
 
@@ -9,6 +9,9 @@ router.get('/sheets/:sheetId/cells/:row/:column', authenticateToken, getCell);
 
 // Обновление ячейки
 router.put('/sheets/:sheetId/cells/:row/:column', authenticateToken, updateCell);
+
+// Массовое обновление ячеек
+router.post('/sheets/:sheetId/cells/batch', authenticateToken, updateCellsBatch);
 
 // Получение истории изменений ячейки
 router.get('/sheets/:sheetId/cells/:row/:column/history', authenticateToken, getCellHistory);

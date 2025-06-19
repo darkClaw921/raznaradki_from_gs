@@ -11,7 +11,12 @@ import {
   ToggleButtonGroup,
   Tooltip,
   Menu,
-  Button
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField
 } from '@mui/material';
 import {
   FormatBold,
@@ -32,8 +37,8 @@ import {
 interface FormatToolbarProps {
   selectedCells: { startRow: number; endRow: number; startColumn: number; endColumn: number } | null;
   onFormat: (format: any) => void;
-  onAddRow: () => void;
-  onAddColumn: () => void;
+  onAddRow: (count?: number) => void;
+  onAddColumn: (count?: number) => void;
   onShowHistory: (row: number, column: number) => void;
   userPermissions: string;
 }
@@ -51,6 +56,10 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({
   const [textAlign, setTextAlign] = useState('left');
   const [colorAnchor, setColorAnchor] = useState<null | HTMLElement>(null);
   const [borderAnchor, setBorderAnchor] = useState<null | HTMLElement>(null);
+  const [addRowDialogOpen, setAddRowDialogOpen] = useState(false);
+  const [addColumnDialogOpen, setAddColumnDialogOpen] = useState(false);
+  const [rowCount, setRowCount] = useState(1);
+  const [columnCount, setColumnCount] = useState(1);
 
   const fontFamilies = [
     'Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Verdana', 'Georgia'
@@ -107,6 +116,18 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({
     }
   };
 
+  const handleAddRows = () => {
+    onAddRow(rowCount);
+    setAddRowDialogOpen(false);
+    setRowCount(1);
+  };
+
+  const handleAddColumns = () => {
+    onAddColumn(columnCount);
+    setAddColumnDialogOpen(false);
+    setColumnCount(1);
+  };
+
   const isReadOnly = userPermissions === 'read';
   const canEditStructure = userPermissions === 'admin';
 
@@ -125,14 +146,22 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({
       {canEditStructure && (
         <>
           <Tooltip title="Добавить строку">
-            <IconButton onClick={onAddRow} size="small">
-              <Add />
-            </IconButton>
+            <Button 
+              onClick={() => setAddRowDialogOpen(true)} 
+              size="small" 
+              startIcon={<Add />}
+            >
+              Строка
+            </Button>
           </Tooltip>
           <Tooltip title="Добавить столбец">
-            <IconButton onClick={onAddColumn} size="small">
-              <Add />
-            </IconButton>
+            <Button 
+              onClick={() => setAddColumnDialogOpen(true)} 
+              size="small" 
+              startIcon={<Add />}
+            >
+              Столбец
+            </Button>
           </Tooltip>
           <Divider orientation="vertical" flexItem />
         </>
@@ -322,6 +351,50 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({
           <History />
         </IconButton>
       </Tooltip>
+
+      {/* Диалог добавления строк */}
+      <Dialog open={addRowDialogOpen} onClose={() => setAddRowDialogOpen(false)}>
+        <DialogTitle>Добавить строки</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Количество строк"
+            type="number"
+            fullWidth
+            variant="outlined"
+            value={rowCount}
+            onChange={(e) => setRowCount(Math.max(1, parseInt(e.target.value) || 1))}
+            inputProps={{ min: 1, max: 50 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddRowDialogOpen(false)}>Отмена</Button>
+          <Button onClick={handleAddRows} variant="contained">Добавить</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Диалог добавления столбцов */}
+      <Dialog open={addColumnDialogOpen} onClose={() => setAddColumnDialogOpen(false)}>
+        <DialogTitle>Добавить столбцы</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Количество столбцов"
+            type="number"
+            fullWidth
+            variant="outlined"
+            value={columnCount}
+            onChange={(e) => setColumnCount(Math.max(1, parseInt(e.target.value) || 1))}
+            inputProps={{ min: 1, max: 26 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddColumnDialogOpen(false)}>Отмена</Button>
+          <Button onClick={handleAddColumns} variant="contained">Добавить</Button>
+        </DialogActions>
+      </Dialog>
     </Paper>
   );
 };

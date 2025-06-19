@@ -106,6 +106,14 @@ export const cellsApi = {
   }) =>
     api.put(`/cells/sheets/${sheetId}/cells/${row}/${column}`, cellData),
 
+  updateCellsBatch: (sheetId: string, cells: Array<{
+    row: number;
+    column: number;
+    value?: string;
+    formula?: string;
+  }>) =>
+    api.post(`/cells/sheets/${sheetId}/cells/batch`, { cells }),
+
   getCellHistory: (sheetId: number, row: number, column: number, limit = 50, offset = 0) =>
     api.get(`/cells/sheets/${sheetId}/cells/${row}/${column}/history?limit=${limit}&offset=${offset}`),
 
@@ -126,6 +134,12 @@ export const sheetsExtendedApi = {
 
   addRow: (sheetId: string, position?: number) =>
     api.post(`/sheets/${sheetId}/rows`, { position }),
+
+  addRowsBatch: (sheetId: string, count: number) =>
+    api.post(`/sheets/${sheetId}/rows/batch`, { count }),
+
+  addColumnsBatch: (sheetId: string, count: number) =>
+    api.post(`/sheets/${sheetId}/columns/batch`, { count }),
 
   getMembers: (sheetId: string) =>
     api.get(`/sheets/${sheetId}/members`),

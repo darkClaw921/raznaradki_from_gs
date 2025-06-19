@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Box, Paper, TextField } from '@mui/material';
 import { cellsApi, sheetsExtendedApi } from '../../services/api';
 import Cell from './Cell';
@@ -6,6 +6,19 @@ import FormatToolbar from './FormatToolbar';
 import CellHistoryDialog from './CellHistoryDialog';
 import { FormulaEngine } from '../../utils/formulaEngine';
 import { debounce } from 'lodash';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Typography,
+  IconButton,
+  Tooltip
+} from '@mui/material';
+import HistoryIcon from '@mui/icons-material/History';
+import { styled } from '@mui/material/styles';
 
 interface SpreadsheetProps {
   sheet: any;
@@ -27,6 +40,11 @@ interface CellSelection {
   endColumn: number;
 }
 
+// Константы для виртуализации
+const ROW_HEIGHT_DEFAULT = 30;
+const HEADER_HEIGHT = 30;
+const BUFFER_SIZE = 5; // Количество строк выше и ниже видимой области
+
 const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => {
   const [cells, setCells] = useState<Map<string, CellData>>(new Map());
   const [selectedCell, setSelectedCell] = useState<{ row: number; column: number } | null>(null);
@@ -47,6 +65,89 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
     operation: 'copy' | 'cut';
   } | null>(null);
 
+  // Состояние для виртуализации
+  const [scrollTop, setScrollTop] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const gridContainerRef = useRef<HTMLDivElement>(null);
+
+  // Дебаунсированная функция для обновления выделения (оптимизация производительности)
+  const debouncedUpdateSelection = useMemo(
+    () => debounce((startRow: number, endRow: number, startColumn: number, endColumn: number) => {
+      setSelectedRange({ startRow, endRow, startColumn, endColumn });
+    }, 16), // ~60fps
+    []
+  );
+
+  // Дебаунсированная функция для обновления позиции скролла
+  const debouncedScrollUpdate = useMemo(
+    () => debounce((scrollTop: number) => {
+      setScrollTop(scrollTop);
+    }, 16), // ~60fps
+    []
+  );
+
+  // Функции для виртуализации
+  const getRowHeight = (row: number): number => {
+    return rowSizes[row] || ROW_HEIGHT_DEFAULT;
+  };
+
+  // Рассчитываем общую высоту всех строк
+  const getTotalHeight = useCallback(() => {
+    const rowCount = sheet.rowCount || 100;
+    let total = 0;
+    for (let i = 0; i < rowCount; i++) {
+      total += getRowHeight(i);
+    }
+    return total;
+  }, [sheet.rowCount, rowSizes]);
+
+  // Рассчитываем видимые строки на основе позиции скролла
+  const getVisibleRows = useCallback(() => {
+    const rowCount = sheet.rowCount || 100;
+    
+    if (containerHeight === 0) {
+      return { startRow: 0, endRow: Math.min(20, rowCount - 1) }; // Показываем первые 20 строк по умолчанию
+    }
+
+    let currentHeight = 0;
+    let startRow = 0;
+    let endRow = 0;
+
+    // Находим первую видимую строку
+    for (let i = 0; i < rowCount; i++) {
+      const rowHeight = getRowHeight(i);
+      if (currentHeight + rowHeight > scrollTop) {
+        startRow = Math.max(0, i - BUFFER_SIZE);
+        break;
+      }
+      currentHeight += rowHeight;
+    }
+
+    // Находим последнюю видимую строку
+    currentHeight = 0;
+    for (let i = 0; i < rowCount; i++) {
+      currentHeight += getRowHeight(i);
+      if (currentHeight > scrollTop + containerHeight + BUFFER_SIZE * ROW_HEIGHT_DEFAULT) {
+        endRow = Math.min(i, rowCount - 1);
+        break;
+      }
+    }
+
+    if (endRow === 0) endRow = rowCount - 1;
+
+    return { startRow, endRow };
+  }, [scrollTop, containerHeight, sheet.rowCount, rowSizes]);
+
+  // Рассчитываем offset для первой видимой строки
+  const getRowOffset = useCallback((targetRow: number) => {
+    let offset = 0;
+    for (let i = 0; i < targetRow; i++) {
+      offset += getRowHeight(i);
+    }
+    return offset;
+  }, [rowSizes]);
+
   // Загрузка ячеек при инициализации
   useEffect(() => {
     if (sheet?.cells) {
@@ -64,6 +165,52 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
       setRowSizes(sheet.settings.rowSizes || {});
     }
   }, [sheet]);
+
+  // Обновление размеров контейнера
+  useEffect(() => {
+    const updateContainerSize = () => {
+      if (containerRef.current) {
+        setContainerHeight(containerRef.current.clientHeight);
+      }
+    };
+
+    updateContainerSize();
+    window.addEventListener('resize', updateContainerSize);
+    return () => window.removeEventListener('resize', updateContainerSize);
+  }, []);
+
+  // Обработчик скролла
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLDivElement;
+    debouncedScrollUpdate(target.scrollTop);
+  }, [debouncedScrollUpdate]);
+
+  // Функция для прокрутки к определенной ячейке
+  const scrollToCell = useCallback((row: number) => {
+    if (!containerRef.current) return;
+
+    const targetOffset = getRowOffset(row);
+    const containerHeight = containerRef.current.clientHeight;
+    const rowHeight = getRowHeight(row);
+
+    // Проверяем, видна ли ячейка
+    const isVisible = targetOffset >= scrollTop && 
+                     targetOffset + rowHeight <= scrollTop + containerHeight;
+
+    if (!isVisible) {
+      // Прокручиваем так, чтобы ячейка была видна
+      let newScrollTop;
+      if (targetOffset < scrollTop) {
+        // Ячейка выше видимой области
+        newScrollTop = targetOffset - BUFFER_SIZE * ROW_HEIGHT_DEFAULT;
+      } else {
+        // Ячейка ниже видимой области
+        newScrollTop = targetOffset - containerHeight + rowHeight + BUFFER_SIZE * ROW_HEIGHT_DEFAULT;
+      }
+
+      containerRef.current.scrollTop = Math.max(0, newScrollTop);
+    }
+  }, [getRowOffset, getRowHeight, scrollTop]);
 
   // Обработка клавиатурной навигации
   useEffect(() => {
@@ -101,6 +248,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
             const newRow = selectedCell.row - 1;
             setSelectedCell({ row: newRow, column: selectedCell.column });
             setSelectedRange({ startRow: newRow, endRow: newRow, startColumn: selectedCell.column, endColumn: selectedCell.column });
+            scrollToCell(newRow);
           }
           break;
         case 'ArrowDown':
@@ -109,6 +257,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
             const newRow = selectedCell.row + 1;
             setSelectedCell({ row: newRow, column: selectedCell.column });
             setSelectedRange({ startRow: newRow, endRow: newRow, startColumn: selectedCell.column, endColumn: selectedCell.column });
+            scrollToCell(newRow);
           }
           break;
         case 'ArrowLeft':
@@ -136,12 +285,44 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
         case 'Delete':
         case 'Backspace':
           e.preventDefault();
-          if (userPermissions !== 'read' && selectedRange) {
-            // Очищаем содержимое выделенных ячеек
-            for (let row = selectedRange.startRow; row <= selectedRange.endRow; row++) {
-              for (let col = selectedRange.startColumn; col <= selectedRange.endColumn; col++) {
-                setCellValue(row, col, '');
+          if (userPermissions !== 'read') {
+            // Проверяем что есть выделенные ячейки
+            if (selectedRange) {
+              console.log('Удаляем содержимое диапазона:', selectedRange);
+              
+              // Создаем новую копию cells Map и удаляем все ячейки сразу
+              const newCells = new Map(cells);
+              let deletedCount = 0;
+              
+              for (let row = selectedRange.startRow; row <= selectedRange.endRow; row++) {
+                for (let col = selectedRange.startColumn; col <= selectedRange.endColumn; col++) {
+                  const key = getCellKey(row, col);
+                  const existingCell = newCells.get(key);
+                  
+                  if (existingCell && existingCell.value !== '') {
+                    // Создаем новую ячейку с пустым значением
+                    const clearedCell: CellData = {
+                      ...existingCell,
+                      value: '',
+                      formula: undefined
+                    };
+                    newCells.set(key, clearedCell);
+                    deletedCount++;
+                    
+                    // Сохраняем в backend
+                    debouncedSaveCell(row, col, '');
+                    console.log(`Очищена ячейка [${row}, ${col}]`);
+                  }
+                }
               }
+              
+              // Обновляем состояние одним вызовом
+              setCells(newCells);
+              console.log(`Очищено ${deletedCount} ячеек`);
+            } else if (selectedCell) {
+              // Если выделена только одна ячейка
+              console.log('Удаляем содержимое одной ячейки:', selectedCell);
+              setCellValue(selectedCell.row, selectedCell.column, '');
             }
           }
           break;
@@ -211,7 +392,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
         }
 
         if (textData) {
-          console.log('Вставляем данные из внешнего источника:', textData.substring(0, 100) + '...');
+          console.log('Вставляем данные из внешнего источника:', textData);
           
           // Разбираем данные по строкам и столбцам
           const rows = textData.split(/\r?\n/).filter(row => row.trim() !== '');
@@ -220,39 +401,72 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
 
           let pastedCount = 0;
           
+          // Создаем новую копию cells Map для массового обновления
+          const newCells = new Map(cells);
+          
           rows.forEach((rowText, rowIndex) => {
+            console.log(`Обрабатываем строку ${rowIndex}: "${rowText}"`);
+            
             // Пытаемся разделить по разным разделителям
             let cellValues = [];
             
-            // Пробуем табуляцию (TSV)
+            // Пробуем табуляцию (TSV) - приоритет
             if (rowText.includes('\t')) {
               cellValues = rowText.split('\t');
+              console.log('Разделено по табуляции:', cellValues);
             } 
             // Пробуем запятую (CSV)
             else if (rowText.includes(',') && !rowText.includes(';')) {
               cellValues = rowText.split(',');
+              console.log('Разделено по запятой:', cellValues);
             }
             // Пробуем точку с запятой
             else if (rowText.includes(';')) {
               cellValues = rowText.split(';');
+              console.log('Разделено по точке с запятой:', cellValues);
             }
             // Если разделителей нет, считаем одной ячейкой
             else {
               cellValues = [rowText];
+              console.log('Без разделителей, одна ячейка:', cellValues);
             }
 
             cellValues.forEach((cellText, colIndex) => {
               const targetRow = startRow + rowIndex;
               const targetCol = startCol + colIndex;
 
+              console.log(`Вставляем в позицию [${targetRow}, ${targetCol}] значение: "${cellText}"`);
+
               if (targetRow < (sheet.rowCount || 100) && targetCol < (sheet.columnCount || 26)) {
                 // Очищаем от кавычек и пробелов
                 const cleanValue = cellText.replace(/^["']|["']$/g, '').trim();
-                setCellValue(targetRow, targetCol, cleanValue);
+                console.log(`Очищенное значение: "${cleanValue}"`);
+                
+                // Обновляем ячейку в Map
+                const key = getCellKey(targetRow, targetCol);
+                const existingCell = newCells.get(key);
+                
+                const updatedCell: CellData = {
+                  row: targetRow,
+                  column: targetCol,
+                  value: cleanValue,
+                  formula: existingCell?.formula,
+                  format: existingCell?.format,
+                };
+                
+                newCells.set(key, updatedCell);
                 pastedCount++;
+                
+                // Сохраняем в backend
+                debouncedSaveCell(targetRow, targetCol, cleanValue);
+              } else {
+                console.log(`Позиция [${targetRow}, ${targetCol}] за пределами таблицы`);
               }
             });
           });
+          
+          // Обновляем состояние одним вызовом
+          setCells(newCells);
 
           console.log(`Успешно вставлено ${pastedCount} ячеек из внешнего источника`);
         } else {
@@ -288,6 +502,38 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
     }, 500),
     [sheet.id, userPermissions]
   );
+
+  // Функция немедленного сохранения ячейки (для массовых операций)
+  const saveCell = useCallback(async (row: number, column: number, value: string, formula?: string) => {
+    if (userPermissions === 'read') return;
+    
+    try {
+      await cellsApi.updateCell(sheet.id, row, column, {
+        value,
+        formula: formula || undefined,
+      });
+      console.log(`Ячейка [${row}, ${column}] сохранена немедленно: "${value}"`);
+    } catch (error) {
+      console.error('Ошибка немедленного сохранения ячейки:', error);
+    }
+  }, [sheet.id, userPermissions]);
+
+  // Функция массового сохранения ячеек (для операций вставки)
+  const saveCellsBatch = useCallback(async (cellsToSave: Array<{
+    row: number;
+    column: number;
+    value?: string;
+    formula?: string;
+  }>) => {
+    if (userPermissions === 'read' || cellsToSave.length === 0) return;
+    
+    try {
+      await cellsApi.updateCellsBatch(sheet.id, cellsToSave);
+      console.log(`Массово сохранено ${cellsToSave.length} ячеек`);
+    } catch (error) {
+      console.error('Ошибка массового сохранения ячеек:', error);
+    }
+  }, [sheet.id, userPermissions]);
 
   const getCellKey = (row: number, column: number) => `${row}-${column}`;
 
@@ -386,7 +632,8 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
       const startColumn = Math.min(dragStart.column, column);
       const endColumn = Math.max(dragStart.column, column);
       
-      setSelectedRange({ startRow, endRow, startColumn, endColumn });
+      // Используем дебаунсированную функцию для плавного выделения
+      debouncedUpdateSelection(startRow, endRow, startColumn, endColumn);
     }
   };
 
@@ -547,10 +794,39 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
     });
 
     // Очищаем вырезанные ячейки
+    const newCells = new Map(cells);
+    // Массив для сбора всех ячеек для массового сохранения
+    const cellsToSave: Array<{row: number; column: number; value: string}> = [];
+    
     for (let row = selectedRange.startRow; row <= selectedRange.endRow; row++) {
       for (let col = selectedRange.startColumn; col <= selectedRange.endColumn; col++) {
-        setCellValue(row, col, '');
+        const key = getCellKey(row, col);
+        const existingCell = newCells.get(key);
+        
+        if (existingCell) {
+          const clearedCell: CellData = {
+            ...existingCell,
+            value: '',
+            formula: undefined
+          };
+          newCells.set(key, clearedCell);
+          
+          // Добавляем в массив для массового сохранения
+          cellsToSave.push({
+            row: row,
+            column: col,
+            value: ''
+          });
+        }
       }
+    }
+    
+    // Обновляем состояние одним вызовом
+    setCells(newCells);
+    
+    // Массово сохраняем все очищенные ячейки одним запросом
+    if (cellsToSave.length > 0) {
+      saveCellsBatch(cellsToSave);
     }
   };
 
@@ -559,19 +835,141 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
     if (!selectedCell || userPermissions === 'read') return;
 
     try {
-      // Сначала пытаемся вставить из внутреннего буфера
-      if (clipboard) {
+      // Сначала проверяем системный буфер обмена (приоритет для внешних данных)
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        console.log('Вставляем из системного буфера:', text);
+        
+        // Разбираем данные по строкам и столбцам
+        const rows = text.split(/\r?\n/).filter(row => row.trim() !== '');
         const startRow = selectedCell.row;
         const startCol = selectedCell.column;
 
+        let pastedCount = 0;
+        
+        // Создаем новую копию cells Map для массового обновления
+        const newCells = new Map(cells);
+        // Массив для сбора всех ячеек для массового сохранения
+        const cellsToSave: Array<{row: number; column: number; value: string; formula?: string}> = [];
+
+        rows.forEach((rowText, rowIndex) => {
+          console.log(`Обрабатываем строку ${rowIndex}: "${rowText}"`);
+          
+          // Пытаемся разделить по разным разделителям
+          let cellValues = [];
+          
+          // Пробуем табуляцию (TSV) - приоритет
+          if (rowText.includes('\t')) {
+            cellValues = rowText.split('\t');
+            console.log('Разделено по табуляции:', cellValues);
+          } 
+          // Пробуем запятую (CSV)
+          else if (rowText.includes(',') && !rowText.includes(';')) {
+            cellValues = rowText.split(',');
+            console.log('Разделено по запятой:', cellValues);
+          }
+          // Пробуем точку с запятой
+          else if (rowText.includes(';')) {
+            cellValues = rowText.split(';');
+            console.log('Разделено по точке с запятой:', cellValues);
+          }
+          // Если разделителей нет, считаем одной ячейкой
+          else {
+            cellValues = [rowText];
+            console.log('Без разделителей, одна ячейка:', cellValues);
+          }
+
+          cellValues.forEach((cellText, colIndex) => {
+            const targetRow = startRow + rowIndex;
+            const targetCol = startCol + colIndex;
+
+            console.log(`Вставляем в позицию [${targetRow}, ${targetCol}] значение: "${cellText}"`);
+
+            if (targetRow < (sheet.rowCount || 100) && targetCol < (sheet.columnCount || 26)) {
+              // Очищаем от кавычек и пробелов
+              const cleanValue = cellText.replace(/^["']|["']$/g, '').trim();
+              console.log(`Очищенное значение: "${cleanValue}"`);
+              
+              // Обновляем ячейку в Map
+              const key = getCellKey(targetRow, targetCol);
+              const existingCell = newCells.get(key);
+              
+              const updatedCell: CellData = {
+                row: targetRow,
+                column: targetCol,
+                value: cleanValue,
+                formula: existingCell?.formula,
+                format: existingCell?.format,
+              };
+              
+              newCells.set(key, updatedCell);
+              pastedCount++;
+              
+              // Добавляем в массив для массового сохранения
+              cellsToSave.push({
+                row: targetRow,
+                column: targetCol,
+                value: cleanValue
+              });
+            } else {
+              console.log(`Позиция [${targetRow}, ${targetCol}] за пределами таблицы`);
+            }
+          });
+        });
+        
+        // Обновляем состояние одним вызовом
+        setCells(newCells);
+        
+        // Массово сохраняем все ячейки одним запросом
+        if (cellsToSave.length > 0) {
+          saveCellsBatch(cellsToSave);
+        }
+
+        console.log(`Успешно вставлено ${pastedCount} ячеек из системного буфера`);
+        return; // Выходим, если успешно вставили из системного буфера
+      }
+
+      // Если в системном буфере нет данных, пытаемся использовать внутренний буфер
+      if (clipboard) {
+        console.log('Вставляем из внутреннего буфера:', clipboard);
+        const startRow = selectedCell.row;
+        const startCol = selectedCell.column;
+
+        // Создаем новую копию cells Map для массового обновления
+        const newCells = new Map(cells);
+        let pastedCount = 0;
+        // Массив для сбора всех ячеек для массового сохранения
+        const cellsToSave: Array<{row: number; column: number; value: string; formula?: string}> = [];
+        
         clipboard.data.forEach((cellData, relativeKey) => {
           const [relRow, relCol] = relativeKey.split('-').map(Number);
           const targetRow = startRow + relRow;
           const targetCol = startCol + relCol;
 
+          console.log(`Вставляем из буфера в позицию [${targetRow}, ${targetCol}]:`, cellData.value);
+
           // Проверяем границы таблицы
           if (targetRow < (sheet.rowCount || 100) && targetCol < (sheet.columnCount || 26)) {
-            setCellValue(targetRow, targetCol, cellData.value, cellData.formula);
+            const key = getCellKey(targetRow, targetCol);
+            
+            const updatedCell: CellData = {
+              row: targetRow,
+              column: targetCol,
+              value: cellData.value,
+              formula: cellData.formula,
+              format: cellData.format,
+            };
+            
+            newCells.set(key, updatedCell);
+            pastedCount++;
+            
+            // Добавляем в массив для массового сохранения
+            cellsToSave.push({
+              row: targetRow,
+              column: targetCol,
+              value: cellData.value,
+              formula: cellData.formula
+            });
             
             // Если есть форматирование, применяем его
             if (cellData.format) {
@@ -580,32 +978,21 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
           }
         });
 
+        // Обновляем состояние одним вызовом
+        setCells(newCells);
+        
+        // Массово сохраняем все ячейки одним запросом
+        if (cellsToSave.length > 0) {
+          saveCellsBatch(cellsToSave);
+        }
+        console.log(`Успешно вставлено ${pastedCount} ячеек из внутреннего буфера`);
+
         // Если это была операция вырезания, очищаем буфер
         if (clipboard.operation === 'cut') {
           setClipboard(null);
         }
-
-        return;
-      }
-
-      // Иначе пытаемся вставить из системного буфера обмена
-      const text = await navigator.clipboard.readText();
-      if (text) {
-        const rows = text.split('\n');
-        const startRow = selectedCell.row;
-        const startCol = selectedCell.column;
-
-        rows.forEach((rowText, rowIndex) => {
-          const cells = rowText.split('\t');
-          cells.forEach((cellText, colIndex) => {
-            const targetRow = startRow + rowIndex;
-            const targetCol = startCol + colIndex;
-
-            if (targetRow < (sheet.rowCount || 100) && targetCol < (sheet.columnCount || 26)) {
-              setCellValue(targetRow, targetCol, cellText.trim());
-            }
-          });
-        });
+      } else {
+        console.log('Нет данных в буферах обмена');
       }
     } catch (error) {
       console.error('Ошибка вставки из буфера обмена:', error);
@@ -678,21 +1065,23 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
     }
   };
 
-  const handleAddRow = async () => {
+  const handleAddRow = async (count: number = 1) => {
     try {
-      await sheetsExtendedApi.addRow(sheet.id.toString());
+      // Используем массовое добавление строк
+      await sheetsExtendedApi.addRowsBatch(sheet.id.toString(), count);
       window.location.reload(); // Простое обновление страницы
     } catch (error) {
-      console.error('Ошибка добавления строки:', error);
+      console.error('Ошибка массового добавления строк:', error);
     }
   };
 
-  const handleAddColumn = async () => {
+  const handleAddColumn = async (count: number = 1) => {
     try {
-      await sheetsExtendedApi.addColumn(sheet.id.toString());
+      // Используем массовое добавление столбцов
+      await sheetsExtendedApi.addColumnsBatch(sheet.id.toString(), count);
       window.location.reload(); // Простое обновление страницы
     } catch (error) {
-      console.error('Ошибка добавления столбца:', error);
+      console.error('Ошибка массового добавления столбцов:', error);
     }
   };
 
@@ -701,32 +1090,44 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
     setHistoryDialogOpen(true);
   };
 
-  const isInSelectedRange = (row: number, column: number): boolean => {
+  const isInSelectedRange = useCallback((row: number, column: number): boolean => {
     if (!selectedRange) return false;
     return row >= selectedRange.startRow && row <= selectedRange.endRow &&
            column >= selectedRange.startColumn && column <= selectedRange.endColumn;
-  };
+  }, [selectedRange]);
 
-  const isInClipboardRange = (row: number, column: number): boolean => {
-    if (!clipboard || clipboard.operation !== 'copy') return false;
-    const range = clipboard.range;
+  const isInClipboardRange = useCallback((row: number, column: number): boolean => {
+    if (!clipboard) return false;
+    const { range } = clipboard;
     return row >= range.startRow && row <= range.endRow &&
            column >= range.startColumn && column <= range.endColumn;
-  };
+  }, [clipboard]);
 
   const getColumnWidth = (column: number): number => {
     return columnSizes[column] || 100;
   };
 
-  const getRowHeight = (row: number): number => {
-    return rowSizes[row] || 30;
+
+
+  // Функция генерации названий столбцов в правильном формате A, B, Z, AA, AB
+  const generateColumnName = (columnIndex: number): string => {
+    let result = '';
+    let num = columnIndex + 1; // Делаем 1-based для корректного алгоритма
+    
+    while (num > 0) {
+      num--; // Переходим к 0-based для вычисления символа
+      result = String.fromCharCode(65 + (num % 26)) + result;
+      num = Math.floor(num / 26);
+    }
+    
+    return result;
   };
 
   const renderColumnHeaders = () => {
     const headers = [];
     for (let col = 0; col < (sheet.columnCount || 26); col++) {
-      const letter = String.fromCharCode(65 + col);
       const width = getColumnWidth(col);
+      const columnName = generateColumnName(col); // Используем правильную генерацию названий
       
       headers.push(
         <Box
@@ -748,7 +1149,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
             msUserSelect: 'none',
           }}
         >
-          {letter}
+          {columnName}
           {/* Разделитель для изменения размера */}
           <Box
             sx={{
@@ -859,56 +1260,94 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
   };
 
   const renderGrid = () => {
+    const { startRow, endRow } = getVisibleRows();
     const rows = [];
+    const totalHeight = getTotalHeight();
+    const startOffset = getRowOffset(startRow);
     
-    for (let row = 0; row < (sheet.rowCount || 100); row++) {
-      const cells = [];
-      const rowHeight = getRowHeight(row);
-      
-      for (let col = 0; col < (sheet.columnCount || 26); col++) {
-        const isSelected = selectedCell?.row === row && selectedCell?.column === col;
-        const isEditing = editingCell?.row === row && editingCell?.column === col;
-        const isInRange = isInSelectedRange(row, col);
-        const isInClipboard = isInClipboardRange(row, col);
-        const cellFormat = getCellFormat(row, col);
-        const columnWidth = getColumnWidth(col);
-        
-        cells.push(
-          <Cell
-            key={`${row}-${col}`}
-            row={row}
-            column={col}
-            value={getCellValue(row, col)}
-            format={cellFormat}
-            isSelected={isSelected}
-            isInRange={isInRange}
-            isInClipboard={isInClipboard}
-            isEditing={isEditing}
-            editValue={editValue}
-            width={columnWidth}
-            height={rowHeight}
-            onEditValueChange={setEditValue}
-            onClick={() => handleCellClick(row, col)}
-            onMouseDown={() => handleCellMouseDown(row, col)}
-            onMouseEnter={() => handleCellMouseEnter(row, col)}
-            onDoubleClick={() => handleCellDoubleClick(row, col)}
-            onKeyDown={handleEditKeyDown}
-            onBlur={handleEditBlur}
-            readOnly={userPermissions === 'read'}
-          />
-        );
-      }
-      
-      rows.push(
-        <Box key={row} sx={{ display: 'flex' }}>
-          {renderRowHeader(row)}
-          {cells}
+    // Создаем виртуальный контейнер с полной высотой
+    const virtualContainer = (
+      <Box
+        sx={{
+          height: totalHeight,
+          position: 'relative',
+        }}
+      >
+        {/* Контейнер для видимых строк */}
+        <Box
+          sx={{
+            position: 'absolute',
+            top: startOffset,
+            left: 0,
+            right: 0,
+          }}
+        >
+          {(() => {
+            const visibleRows = [];
+            
+            for (let row = startRow; row <= endRow; row++) {
+              const cells = [];
+              const rowHeight = getRowHeight(row);
+              
+              for (let col = 0; col < (sheet.columnCount || 26); col++) {
+                const isSelected = selectedCell?.row === row && selectedCell?.column === col;
+                const isEditing = editingCell?.row === row && editingCell?.column === col;
+                const isInRange = isInSelectedRange(row, col);
+                const isInClipboard = isInClipboardRange(row, col);
+                const cellFormat = getCellFormat(row, col);
+                const columnWidth = getColumnWidth(col);
+                
+                cells.push(
+                  <Cell
+                    key={`${row}-${col}`}
+                    row={row}
+                    column={col}
+                    value={getCellValue(row, col)}
+                    format={cellFormat}
+                    isSelected={isSelected}
+                    isInRange={isInRange}
+                    isInClipboard={isInClipboard}
+                    isEditing={isEditing}
+                    editValue={editValue}
+                    width={columnWidth}
+                    height={rowHeight}
+                    onEditValueChange={setEditValue}
+                    onClick={() => handleCellClick(row, col)}
+                    onMouseDown={() => handleCellMouseDown(row, col)}
+                    onMouseEnter={() => handleCellMouseEnter(row, col)}
+                    onDoubleClick={() => handleCellDoubleClick(row, col)}
+                    onKeyDown={handleEditKeyDown}
+                    onBlur={handleEditBlur}
+                    readOnly={userPermissions === 'read'}
+                  />
+                );
+              }
+              
+              visibleRows.push(
+                <Box key={row} sx={{ display: 'flex' }}>
+                  {renderRowHeader(row)}
+                  {cells}
+                </Box>
+              );
+            }
+            
+            return visibleRows;
+          })()}
         </Box>
-      );
-    }
+      </Box>
+    );
     
-    return rows;
+    return virtualContainer;
   };
+
+  // Очистка дебаунсированных функций при размонтировании
+  useEffect(() => {
+    return () => {
+      debouncedSaveCell.cancel();
+      debouncedUpdateSelection.cancel();
+      debouncedScrollUpdate.cancel();
+    };
+  }, [debouncedSaveCell, debouncedUpdateSelection, debouncedScrollUpdate]);
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -924,6 +1363,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
 
       {/* Таблица */}
       <Paper 
+        ref={containerRef}
         sx={{ 
           flex: 1, 
           overflow: 'auto',
@@ -933,6 +1373,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
           }
         }} 
         onMouseUp={handleMouseUp}
+        onScroll={handleScroll}
         tabIndex={0} // Делаем Paper фокусируемым для клавиатурной навигации
         onFocus={() => {
           // Если нет выделенной ячейки, выбираем первую
@@ -955,7 +1396,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
           }
         }}
       >
-        <Box sx={{ display: 'inline-block', minWidth: '100%' }}>
+        <Box ref={gridContainerRef} sx={{ display: 'inline-block', minWidth: '100%' }}>
           {/* Headers */}
           <Box sx={{ display: 'flex', position: 'sticky', top: 0, zIndex: 1 }}>
             <Box sx={{ width: 50, height: 30 }} /> {/* Corner cell */}

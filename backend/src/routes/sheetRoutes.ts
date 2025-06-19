@@ -12,6 +12,8 @@ import {
   checkCellAccess,
   addColumn,
   addRow,
+  addRowsBatch,
+  addColumnsBatch,
   getSheetMembers,
   inviteMember,
   resizeColumn,
@@ -51,6 +53,12 @@ router.post('/:id/columns', authenticateToken, addColumn);
 
 // Добавление строки
 router.post('/:id/rows', authenticateToken, addRow);
+
+// Массовое добавление строк
+router.post('/:id/rows/batch', authenticateToken, addRowsBatch);
+
+// Массовое добавление столбцов  
+router.post('/:id/columns/batch', authenticateToken, addColumnsBatch);
 
 // Получение участников таблицы
 router.get('/:id/members', authenticateToken, getSheetMembers);

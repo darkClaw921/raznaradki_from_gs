@@ -725,6 +725,124 @@ export const addRow = async (req: Request, res: Response) => {
   }
 };
 
+// Массовое добавление строк
+export const addRowsBatch = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { count = 1 } = req.body; // количество строк для добавления
+    const userId = req.user.id;
+
+    console.log(`Массовое добавление ${count} строк для таблицы ${id}`);
+
+    const sheet = await Sheet.findByPk(id);
+    if (!sheet) {
+      return res.status(404).json({
+        error: 'Таблица не найдена'
+      });
+    }
+
+    // Проверка прав на редактирование структуры
+    const userSheet = await UserSheet.findOne({
+      where: { userId, sheetId: id }
+    });
+
+    const hasAdminAccess = sheet.createdBy === userId || 
+                          (userSheet && userSheet.permission === 'admin');
+
+    if (!hasAdminAccess) {
+      return res.status(403).json({
+        error: 'Нет прав на изменение структуры таблицы'
+      });
+    }
+
+    // Валидация количества (max 1000 строк за раз для безопасности)
+    const validCount = Math.min(Math.max(count, 1), 1000);
+
+    // Дополнительная проверка для очень больших запросов
+    if (count > 100) {
+      console.log(`⚠️  Большой запрос: добавление ${count} строк, обработка может занять время`);
+    }
+
+    // Увеличиваем количество строк одним запросом
+    await sheet.update({
+      rowCount: sheet.rowCount + validCount
+    });
+
+    console.log(`Успешно добавлено ${validCount} строк. Новое количество: ${sheet.rowCount + validCount}`);
+
+    res.json({
+      message: `Добавлено ${validCount} строк`,
+      addedCount: validCount,
+      sheet: await Sheet.findByPk(id)
+    });
+
+  } catch (error) {
+    console.error('Ошибка массового добавления строк:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера'
+    });
+  }
+};
+
+// Массовое добавление столбцов
+export const addColumnsBatch = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { count = 1 } = req.body; // количество столбцов для добавления
+    const userId = req.user.id;
+
+    console.log(`Массовое добавление ${count} столбцов для таблицы ${id}`);
+
+    const sheet = await Sheet.findByPk(id);
+    if (!sheet) {
+      return res.status(404).json({
+        error: 'Таблица не найдена'
+      });
+    }
+
+    // Проверка прав на редактирование структуры
+    const userSheet = await UserSheet.findOne({
+      where: { userId, sheetId: id }
+    });
+
+    const hasAdminAccess = sheet.createdBy === userId || 
+                          (userSheet && userSheet.permission === 'admin');
+
+    if (!hasAdminAccess) {
+      return res.status(403).json({
+        error: 'Нет прав на изменение структуры таблицы'
+      });
+    }
+
+    // Валидация количества (max 500 столбцов за раз для безопасности)
+    const validCount = Math.min(Math.max(count, 1), 500);
+
+    // Дополнительная проверка для очень больших запросов
+    if (count > 26) {
+      console.log(`⚠️  Большой запрос: добавление ${count} столбцов, обработка может занять время`);
+    }
+
+    // Увеличиваем количество столбцов одним запросом
+    await sheet.update({
+      columnCount: sheet.columnCount + validCount
+    });
+
+    console.log(`Успешно добавлено ${validCount} столбцов. Новое количество: ${sheet.columnCount + validCount}`);
+
+    res.json({
+      message: `Добавлено ${validCount} столбцов`,
+      addedCount: validCount,
+      sheet: await Sheet.findByPk(id)
+    });
+
+  } catch (error) {
+    console.error('Ошибка массового добавления столбцов:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера'
+    });
+  }
+};
+
 // Получение участников таблицы
 export const getSheetMembers = async (req: Request, res: Response) => {
   try {

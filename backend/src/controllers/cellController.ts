@@ -333,4 +333,132 @@ export const formatCells = async (req: Request, res: Response) => {
       error: 'Ошибка сервера'
     });
   }
+};
+
+// Массовое обновление ячеек (для операций вставки)
+export const updateCellsBatch = async (req: Request, res: Response) => {
+  try {
+    const { sheetId } = req.params;
+    const { cells: cellsData } = req.body;
+    const userId = req.user.id;
+
+    // Проверка доступа к таблице
+    const sheet = await Sheet.findByPk(sheetId);
+    if (!sheet) {
+      return res.status(404).json({
+        error: 'Таблица не найдена'
+      });
+    }
+
+    // Проверка прав на редактирование
+    const userSheet = await UserSheet.findOne({
+      where: { userId, sheetId }
+    });
+
+    const hasWriteAccess = sheet.createdBy === userId || 
+                          (userSheet && ['write', 'admin'].includes(userSheet.permission));
+
+    if (!hasWriteAccess) {
+      return res.status(403).json({
+        error: 'Нет прав на редактирование ячеек'
+      });
+    }
+
+    const updatedCells = [];
+    const createdCells = [];
+
+    console.log(`Массовое обновление ${cellsData.length} ячеек в таблице ${sheetId}`);
+
+    // Обрабатываем все ячейки в одной транзакции
+    for (const cellData of cellsData) {
+      const { row, column, value, formula } = cellData;
+      const rowNum = parseInt(row);
+      const colNum = parseInt(column);
+
+      // Ищем существующую ячейку
+      let cell = await Cell.findOne({
+        where: { sheetId, row: rowNum, column: colNum }
+      });
+
+      if (cell) {
+        // Создаем запись в истории перед обновлением
+        await CellHistory.create({
+          cellId: cell.id,
+          sheetId: parseInt(sheetId),
+          row: rowNum,
+          column: colNum,
+          oldValue: cell.value,
+          newValue: value,
+          oldFormula: cell.formula,
+          newFormula: formula,
+          oldFormat: cell.format,
+          newFormat: cell.format,
+          changedBy: userId,
+          changeType: value !== cell.value ? 'value' : 'formula'
+        });
+
+        // Обновляем ячейку
+        const updateData: any = {};
+        if (value !== undefined) updateData.value = value;
+        if (formula !== undefined) updateData.formula = formula;
+
+        if (Object.keys(updateData).length > 0) {
+          await cell.update(updateData);
+          updatedCells.push(cell);
+        }
+      } else {
+        // Создаем новую ячейку
+        cell = await Cell.create({
+          sheetId: parseInt(sheetId),
+          row: rowNum,
+          column: colNum,
+          value: value || '',
+          formula: formula || null,
+          format: null,
+          isLocked: false
+        });
+
+        // Создаем запись в истории для новой ячейки
+        await CellHistory.create({
+          cellId: cell.id,
+          sheetId: parseInt(sheetId),
+          row: rowNum,
+          column: colNum,
+          oldValue: null,
+          newValue: value,
+          oldFormula: null,
+          newFormula: formula,
+          oldFormat: null,
+          newFormat: null,
+          changedBy: userId,
+          changeType: 'create'
+        });
+
+        createdCells.push(cell);
+      }
+    }
+
+    // Обновляем связанные отчеты только один раз после всех изменений
+    try {
+      const updatedReports = await updateLinkedReports(parseInt(sheetId));
+      if (updatedReports > 0) {
+        console.log(`✅ Обновлено ${updatedReports} связанных отчетов после массового обновления`);
+      }
+    } catch (error) {
+      console.error('Ошибка обновления связанных отчетов:', error);
+    }
+
+    res.json({
+      message: 'Ячейки обновлены массово',
+      updatedCells: updatedCells.length,
+      createdCells: createdCells.length,
+      totalProcessed: cellsData.length
+    });
+
+  } catch (error) {
+    console.error('Ошибка массового обновления ячеек:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера при массовом обновлении ячеек'
+    });
+  }
 }; 
