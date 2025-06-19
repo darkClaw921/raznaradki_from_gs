@@ -39,6 +39,13 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
   const [historyCell, setHistoryCell] = useState<{ row: number; column: number } | null>(null);
   const [columnSizes, setColumnSizes] = useState<{ [key: number]: number }>({});
   const [rowSizes, setRowSizes] = useState<{ [key: number]: number }>({});
+  
+  // Состояние для буфера обмена
+  const [clipboard, setClipboard] = useState<{
+    data: Map<string, CellData>;
+    range: CellSelection;
+    operation: 'copy' | 'cut';
+  } | null>(null);
 
   // Загрузка ячеек при инициализации
   useEffect(() => {
@@ -57,6 +64,213 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
       setRowSizes(sheet.settings.rowSizes || {});
     }
   }, [sheet]);
+
+  // Обработка клавиатурной навигации
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Обработка Escape для всех случаев (даже во время редактирования)
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        // Снимаем выделение и очищаем буфер обмена
+        setSelectedCell(null);
+        setSelectedRange(null);
+        setEditingCell(null);
+        setClipboard(null);
+        setEditValue('');
+        console.log('Escape нажат: очистка выделения и буфера обмена');
+        return;
+      }
+
+      // Не обрабатываем остальные клавиши если идёт редактирование ячейки
+      if (editingCell) return;
+      
+      // Не обрабатываем если фокус на другом элементе ввода
+      if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+        return;
+      }
+
+      if (!selectedCell) return;
+
+      const maxRows = sheet.rowCount || 100;
+      const maxCols = sheet.columnCount || 26;
+
+      switch (e.key) {
+        case 'ArrowUp':
+          e.preventDefault();
+          if (selectedCell.row > 0) {
+            const newRow = selectedCell.row - 1;
+            setSelectedCell({ row: newRow, column: selectedCell.column });
+            setSelectedRange({ startRow: newRow, endRow: newRow, startColumn: selectedCell.column, endColumn: selectedCell.column });
+          }
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          if (selectedCell.row < maxRows - 1) {
+            const newRow = selectedCell.row + 1;
+            setSelectedCell({ row: newRow, column: selectedCell.column });
+            setSelectedRange({ startRow: newRow, endRow: newRow, startColumn: selectedCell.column, endColumn: selectedCell.column });
+          }
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (selectedCell.column > 0) {
+            const newCol = selectedCell.column - 1;
+            setSelectedCell({ row: selectedCell.row, column: newCol });
+            setSelectedRange({ startRow: selectedCell.row, endRow: selectedCell.row, startColumn: newCol, endColumn: newCol });
+          }
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (selectedCell.column < maxCols - 1) {
+            const newCol = selectedCell.column + 1;
+            setSelectedCell({ row: selectedCell.row, column: newCol });
+            setSelectedRange({ startRow: selectedCell.row, endRow: selectedCell.row, startColumn: newCol, endColumn: newCol });
+          }
+          break;
+        case 'Enter':
+          e.preventDefault();
+          if (userPermissions !== 'read' && selectedCell) {
+            handleCellDoubleClick(selectedCell.row, selectedCell.column);
+          }
+          break;
+        case 'Delete':
+        case 'Backspace':
+          e.preventDefault();
+          if (userPermissions !== 'read' && selectedRange) {
+            // Очищаем содержимое выделенных ячеек
+            for (let row = selectedRange.startRow; row <= selectedRange.endRow; row++) {
+              for (let col = selectedRange.startColumn; col <= selectedRange.endColumn; col++) {
+                setCellValue(row, col, '');
+              }
+            }
+          }
+          break;
+      }
+
+      // Обработка комбинаций клавиш с Ctrl
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key) {
+          case 'c':
+          case 'C':
+            e.preventDefault();
+            copySelectedCells();
+            break;
+          case 'x':
+          case 'X':
+            e.preventDefault();
+            cutSelectedCells();
+            break;
+          case 'v':
+          case 'V':
+            e.preventDefault();
+            pasteClipboard();
+            break;
+        }
+      }
+    };
+
+    // Обработчик события paste для улавливания данных из внешних источников
+    const handlePaste = async (e: ClipboardEvent) => {
+      // Пропускаем если идёт редактирование ячейки или нет выделенной ячейки
+      if (editingCell || !selectedCell || userPermissions === 'read') {
+        console.log('Пропускаем paste: редактирование=', editingCell, 'выделенная ячейка=', selectedCell, 'права=', userPermissions);
+        return;
+      }
+      
+      // Пропускаем если фокус на элементе ввода (кроме нашей таблицы)
+      const activeElement = document.activeElement;
+      if (activeElement && ['INPUT', 'TEXTAREA'].includes(activeElement.tagName)) {
+        console.log('Пропускаем paste: фокус на элементе ввода');
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+      
+      console.log('Обрабатываем paste событие');
+      
+      try {
+        // Получаем данные из системного буфера обмена
+        const clipboardData = e.clipboardData;
+        let textData = '';
+
+        if (clipboardData) {
+          // Пытаемся получить данные в разных форматах
+          textData = clipboardData.getData('text/plain') || 
+                    clipboardData.getData('text/tab-separated-values') ||
+                    clipboardData.getData('text/csv');
+        }
+
+        if (!textData) {
+          // Fallback - пытаемся прочитать через navigator.clipboard
+          try {
+            textData = await navigator.clipboard.readText();
+          } catch (clipboardError) {
+            console.log('Не удалось прочитать clipboard через navigator:', clipboardError);
+          }
+        }
+
+        if (textData) {
+          console.log('Вставляем данные из внешнего источника:', textData.substring(0, 100) + '...');
+          
+          // Разбираем данные по строкам и столбцам
+          const rows = textData.split(/\r?\n/).filter(row => row.trim() !== '');
+          const startRow = selectedCell.row;
+          const startCol = selectedCell.column;
+
+          let pastedCount = 0;
+          
+          rows.forEach((rowText, rowIndex) => {
+            // Пытаемся разделить по разным разделителям
+            let cellValues = [];
+            
+            // Пробуем табуляцию (TSV)
+            if (rowText.includes('\t')) {
+              cellValues = rowText.split('\t');
+            } 
+            // Пробуем запятую (CSV)
+            else if (rowText.includes(',') && !rowText.includes(';')) {
+              cellValues = rowText.split(',');
+            }
+            // Пробуем точку с запятой
+            else if (rowText.includes(';')) {
+              cellValues = rowText.split(';');
+            }
+            // Если разделителей нет, считаем одной ячейкой
+            else {
+              cellValues = [rowText];
+            }
+
+            cellValues.forEach((cellText, colIndex) => {
+              const targetRow = startRow + rowIndex;
+              const targetCol = startCol + colIndex;
+
+              if (targetRow < (sheet.rowCount || 100) && targetCol < (sheet.columnCount || 26)) {
+                // Очищаем от кавычек и пробелов
+                const cleanValue = cellText.replace(/^["']|["']$/g, '').trim();
+                setCellValue(targetRow, targetCol, cleanValue);
+                pastedCount++;
+              }
+            });
+          });
+
+          console.log(`Успешно вставлено ${pastedCount} ячеек из внешнего источника`);
+        } else {
+          console.log('Нет данных для вставки');
+        }
+      } catch (error) {
+        console.error('Ошибка вставки из внешнего источника:', error);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('paste', handlePaste, true); // Используем capture фазу
+    
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('paste', handlePaste, true);
+    };
+  }, [selectedCell, editingCell, selectedRange, userPermissions, sheet, clipboard]);
 
   // Debounced функция для сохранения ячейки
   const debouncedSaveCell = useCallback(
@@ -126,7 +340,12 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
     debouncedSaveCell(row, column, value, formula);
   };
 
-  const handleCellClick = (row: number, column: number) => {
+  const handleCellClick = (row: number, column: number, e?: React.MouseEvent) => {
+    // Предотвращаем выделение текста
+    if (e) {
+      e.preventDefault();
+    }
+
     if (userPermissions === 'read') {
       setSelectedCell({ row, column });
       setSelectedRange({ startRow: row, endRow: row, startColumn: column, endColumn: column });
@@ -152,10 +371,12 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
   };
 
   const handleCellMouseDown = (row: number, column: number) => {
+    // Начинаем операцию выделения диапазона
     setIsDragging(true);
     setDragStart({ row, column });
     setSelectedCell({ row, column });
     setSelectedRange({ startRow: row, endRow: row, startColumn: column, endColumn: column });
+    setEditingCell(null);
   };
 
   const handleCellMouseEnter = (row: number, column: number) => {
@@ -192,6 +413,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
       if (editingCell) {
         saveCellWithFormula(editingCell.row, editingCell.column, editValue);
         setEditingCell(null);
+        setEditValue('');
       }
     } else if (e.key === 'Tab') {
       e.preventDefault();
@@ -209,8 +431,12 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
           });
         }
         setEditingCell(null);
+        setEditValue('');
       }
     } else if (e.key === 'Escape') {
+      // Отменяем редактирование без сохранения
+      e.preventDefault();
+      e.stopPropagation();
       setEditingCell(null);
       setEditValue('');
     }
@@ -218,9 +444,24 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
 
   const handleEditBlur = () => {
     // Автосохранение при потере фокуса
-    if (editingCell) {
-      saveCellWithFormula(editingCell.row, editingCell.column, editValue);
+    if (editingCell && editValue !== undefined && editValue !== null) {
+      console.log('Автосохранение ячейки при потере фокуса:', editingCell, 'значение:', editValue);
+      
+      // Получаем текущее значение ячейки для сравнения
+      const key = getCellKey(editingCell.row, editingCell.column);
+      const existingCell = cells.get(key);
+      const currentValue = existingCell?.formula || existingCell?.value || '';
+      
+      // Сохраняем только если значение действительно изменилось
+      if (editValue !== currentValue) {
+        saveCellWithFormula(editingCell.row, editingCell.column, editValue);
+        console.log('Значение изменилось, сохраняем');
+      } else {
+        console.log('Значение не изменилось, не сохраняем');
+      }
+      
       setEditingCell(null);
+      setEditValue('');
     }
   };
 
@@ -234,6 +475,167 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
     } else {
       // Обычное значение
       setCellValue(row, column, value);
+    }
+  };
+
+  // Функция копирования выделенных ячеек
+  const copySelectedCells = () => {
+    if (!selectedRange) return;
+
+    const clipboardData = new Map<string, CellData>();
+    
+    for (let row = selectedRange.startRow; row <= selectedRange.endRow; row++) {
+      for (let col = selectedRange.startColumn; col <= selectedRange.endColumn; col++) {
+        const key = getCellKey(row, col);
+        const cell = cells.get(key);
+        
+        if (cell) {
+          const relativeKey = getCellKey(
+            row - selectedRange.startRow, 
+            col - selectedRange.startColumn
+          );
+          clipboardData.set(relativeKey, { ...cell });
+        }
+      }
+    }
+
+    setClipboard({
+      data: clipboardData,
+      range: { ...selectedRange },
+      operation: 'copy'
+    });
+
+    // Также копируем в системный буфер обмена в формате TSV
+    const textData = [];
+    for (let row = selectedRange.startRow; row <= selectedRange.endRow; row++) {
+      const rowData = [];
+      for (let col = selectedRange.startColumn; col <= selectedRange.endColumn; col++) {
+        const value = getCellValue(row, col);
+        rowData.push(value);
+      }
+      textData.push(rowData.join('\t'));
+    }
+    
+    navigator.clipboard.writeText(textData.join('\n')).catch(console.error);
+  };
+
+  // Функция вырезания выделенных ячеек
+  const cutSelectedCells = () => {
+    if (!selectedRange || userPermissions === 'read') return;
+
+    const clipboardData = new Map<string, CellData>();
+    
+    for (let row = selectedRange.startRow; row <= selectedRange.endRow; row++) {
+      for (let col = selectedRange.startColumn; col <= selectedRange.endColumn; col++) {
+        const key = getCellKey(row, col);
+        const cell = cells.get(key);
+        
+        if (cell) {
+          const relativeKey = getCellKey(
+            row - selectedRange.startRow, 
+            col - selectedRange.startColumn
+          );
+          clipboardData.set(relativeKey, { ...cell });
+        }
+      }
+    }
+
+    setClipboard({
+      data: clipboardData,
+      range: { ...selectedRange },
+      operation: 'cut'
+    });
+
+    // Очищаем вырезанные ячейки
+    for (let row = selectedRange.startRow; row <= selectedRange.endRow; row++) {
+      for (let col = selectedRange.startColumn; col <= selectedRange.endColumn; col++) {
+        setCellValue(row, col, '');
+      }
+    }
+  };
+
+  // Функция вставки из буфера обмена
+  const pasteClipboard = async () => {
+    if (!selectedCell || userPermissions === 'read') return;
+
+    try {
+      // Сначала пытаемся вставить из внутреннего буфера
+      if (clipboard) {
+        const startRow = selectedCell.row;
+        const startCol = selectedCell.column;
+
+        clipboard.data.forEach((cellData, relativeKey) => {
+          const [relRow, relCol] = relativeKey.split('-').map(Number);
+          const targetRow = startRow + relRow;
+          const targetCol = startCol + relCol;
+
+          // Проверяем границы таблицы
+          if (targetRow < (sheet.rowCount || 100) && targetCol < (sheet.columnCount || 26)) {
+            setCellValue(targetRow, targetCol, cellData.value, cellData.formula);
+            
+            // Если есть форматирование, применяем его
+            if (cellData.format) {
+              handleCellFormat(targetRow, targetCol, cellData.format);
+            }
+          }
+        });
+
+        // Если это была операция вырезания, очищаем буфер
+        if (clipboard.operation === 'cut') {
+          setClipboard(null);
+        }
+
+        return;
+      }
+
+      // Иначе пытаемся вставить из системного буфера обмена
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        const rows = text.split('\n');
+        const startRow = selectedCell.row;
+        const startCol = selectedCell.column;
+
+        rows.forEach((rowText, rowIndex) => {
+          const cells = rowText.split('\t');
+          cells.forEach((cellText, colIndex) => {
+            const targetRow = startRow + rowIndex;
+            const targetCol = startCol + colIndex;
+
+            if (targetRow < (sheet.rowCount || 100) && targetCol < (sheet.columnCount || 26)) {
+              setCellValue(targetRow, targetCol, cellText.trim());
+            }
+          });
+        });
+      }
+    } catch (error) {
+      console.error('Ошибка вставки из буфера обмена:', error);
+    }
+  };
+
+  // Функция применения форматирования к отдельной ячейке
+  const handleCellFormat = async (row: number, column: number, format: any) => {
+    try {
+      await cellsApi.formatCells(sheet.id, format, row, row, column, column);
+
+      // Обновляем локальное состояние
+      const key = getCellKey(row, column);
+      const newCells = new Map(cells);
+      const existingCell = newCells.get(key);
+      const updatedFormat = { ...existingCell?.format, ...format };
+      
+      if (existingCell) {
+        newCells.set(key, { ...existingCell, format: updatedFormat });
+      } else {
+        newCells.set(key, {
+          row,
+          column,
+          value: '',
+          format: updatedFormat
+        });
+      }
+      setCells(newCells);
+    } catch (error) {
+      console.error('Ошибка применения форматирования к ячейке:', error);
     }
   };
 
@@ -305,6 +707,13 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
            column >= selectedRange.startColumn && column <= selectedRange.endColumn;
   };
 
+  const isInClipboardRange = (row: number, column: number): boolean => {
+    if (!clipboard || clipboard.operation !== 'copy') return false;
+    const range = clipboard.range;
+    return row >= range.startRow && row <= range.endRow &&
+           column >= range.startColumn && column <= range.endColumn;
+  };
+
   const getColumnWidth = (column: number): number => {
     return columnSizes[column] || 100;
   };
@@ -333,6 +742,10 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
             fontWeight: 'bold',
             fontSize: '0.875rem',
             position: 'relative',
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
+            MozUserSelect: 'none',
+            msUserSelect: 'none',
           }}
         >
           {letter}
@@ -396,6 +809,10 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
           fontWeight: 'bold',
           fontSize: '0.875rem',
           position: 'relative',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          MozUserSelect: 'none',
+          msUserSelect: 'none',
         }}
       >
         {row + 1}
@@ -452,6 +869,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
         const isSelected = selectedCell?.row === row && selectedCell?.column === col;
         const isEditing = editingCell?.row === row && editingCell?.column === col;
         const isInRange = isInSelectedRange(row, col);
+        const isInClipboard = isInClipboardRange(row, col);
         const cellFormat = getCellFormat(row, col);
         const columnWidth = getColumnWidth(col);
         
@@ -464,6 +882,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
             format={cellFormat}
             isSelected={isSelected}
             isInRange={isInRange}
+            isInClipboard={isInClipboard}
             isEditing={isEditing}
             editValue={editValue}
             width={columnWidth}
@@ -504,7 +923,38 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
       />
 
       {/* Таблица */}
-      <Paper sx={{ flex: 1, overflow: 'auto' }} onMouseUp={handleMouseUp}>
+      <Paper 
+        sx={{ 
+          flex: 1, 
+          overflow: 'auto',
+          outline: 'none', // Убираем стандартный outline при фокусе
+          '&:focus': {
+            outline: 'none'
+          }
+        }} 
+        onMouseUp={handleMouseUp}
+        tabIndex={0} // Делаем Paper фокусируемым для клавиатурной навигации
+        onFocus={() => {
+          // Если нет выделенной ячейки, выбираем первую
+          if (!selectedCell) {
+            setSelectedCell({ row: 0, column: 0 });
+            setSelectedRange({ startRow: 0, endRow: 0, startColumn: 0, endColumn: 0 });
+          }
+          console.log('Таблица получила фокус');
+        }}
+        onMouseDown={(e) => {
+          // Убеждаемся что таблица получает фокус при клике
+          e.currentTarget.focus();
+        }}
+        onPaste={(e) => {
+          // Дополнительная обработка paste на уровне таблицы
+          console.log('Paste событие на уровне таблицы');
+          if (selectedCell && !editingCell && userPermissions !== 'read') {
+            e.preventDefault();
+            // Событие будет обработано глобальным обработчиком
+          }
+        }}
+      >
         <Box sx={{ display: 'inline-block', minWidth: '100%' }}>
           {/* Headers */}
           <Box sx={{ display: 'flex', position: 'sticky', top: 0, zIndex: 1 }}>

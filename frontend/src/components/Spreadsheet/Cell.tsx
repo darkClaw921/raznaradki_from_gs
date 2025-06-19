@@ -8,6 +8,7 @@ interface CellProps {
   format?: any;
   isSelected: boolean;
   isInRange?: boolean;
+  isInClipboard?: boolean;
   isEditing: boolean;
   editValue: string;
   width?: number;
@@ -29,6 +30,7 @@ const Cell: React.FC<CellProps> = ({
   format = {},
   isSelected,
   isInRange = false,
+  isInClipboard = false,
   isEditing,
   editValue,
   width = 100,
@@ -55,6 +57,14 @@ const Cell: React.FC<CellProps> = ({
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap',
       cursor: readOnly ? 'default' : 'pointer',
+      // Предотвращаем выделение текста браузером
+      userSelect: 'none',
+      WebkitUserSelect: 'none',
+      MozUserSelect: 'none',
+      msUserSelect: 'none',
+      // Предотвращаем контекстное меню для лучшего UX
+      WebkitTouchCallout: 'none',
+      WebkitTapHighlightColor: 'transparent',
     };
 
     // Применяем пользовательское форматирование
@@ -88,12 +98,21 @@ const Cell: React.FC<CellProps> = ({
           styles.border = borderStyle;
       }
     } else {
-      // Стандартные границы
-      styles.border = isSelected 
-        ? '2px solid #1976d2' 
-        : isInRange
-          ? '1px solid #1976d2'
-          : '1px solid #e0e0e0';
+      // Стандартные границы с улучшенной визуализацией
+      if (isSelected) {
+        styles.border = '2px solid #1976d2';
+        styles.boxShadow = '0 0 0 1px #1976d2';
+        styles.zIndex = 10;
+      } else if (isInRange) {
+        styles.border = '1px solid #2196f3';
+        styles.backgroundColor = !format.backgroundColor ? '#f0f8ff' : format.backgroundColor;
+      } else if (isInClipboard) {
+        // Пунктирная граница для скопированных ячеек
+        styles.border = '2px dashed #ff9800';
+        styles.backgroundColor = !format.backgroundColor ? '#fff3e0' : format.backgroundColor;
+      } else {
+        styles.border = '1px solid #e0e0e0';
+      }
     }
 
     // Цвет фона для выделенных ячеек
@@ -102,6 +121,8 @@ const Cell: React.FC<CellProps> = ({
         styles.backgroundColor = '#e3f2fd';
       } else if (isInRange) {
         styles.backgroundColor = '#f0f8ff';
+      } else if (isInClipboard) {
+        styles.backgroundColor = '#fff3e0';
       } else if (readOnly) {
         styles.backgroundColor = '#f9f9f9';
       } else {
@@ -109,16 +130,23 @@ const Cell: React.FC<CellProps> = ({
       }
     }
 
-    // Эффект hover
-    styles['&:hover'] = {
-      backgroundColor: isSelected || isInRange
-        ? styles.backgroundColor
-        : readOnly 
-          ? '#f9f9f9' 
-          : '#f5f5f5',
-    };
+    // Эффект hover только если ячейка не выделена
+    if (!isSelected && !isInRange && !isInClipboard) {
+      styles['&:hover'] = {
+        backgroundColor: readOnly ? '#f9f9f9' : '#f5f5f5',
+        border: '1px solid #bdbdbd',
+      };
+    }
 
     return styles;
+  };
+
+  // Обработчик mouseDown с предотвращением выделения текста
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault(); // Предотвращаем выделение текста
+    if (onMouseDown) {
+      onMouseDown();
+    }
   };
 
   if (isEditing) {
@@ -157,7 +185,7 @@ const Cell: React.FC<CellProps> = ({
     <Box
       sx={getFormattedStyles()}
       onClick={onClick}
-      onMouseDown={onMouseDown}
+      onMouseDown={handleMouseDown}
       onMouseEnter={onMouseEnter}
       onDoubleClick={onDoubleClick}
       title={value} // Показываем полный текст в tooltip
