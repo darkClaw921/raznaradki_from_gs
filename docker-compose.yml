@@ -15,6 +15,7 @@ services:
       - mysql_data:/var/lib/mysql
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
       - ./database/seeds:/docker-entrypoint-initdb.d/seeds
+      - ./mysql/my.cnf:/etc/mysql/conf.d/charset.cnf
     ports:
       - "3306:3306"
     networks:
@@ -104,6 +105,24 @@ services:
       - dmd_network
     profiles:
       - admin
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: dmd_phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: ${MYSQL_USER:-dmduser}
+      PMA_PASSWORD: ${MYSQL_PASSWORD:-dmdpassword}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - dmd_network
+    
+
 
 volumes:
   mysql_data:

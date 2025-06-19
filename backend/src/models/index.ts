@@ -102,6 +102,10 @@ const setupAssociations = () => {
   // Sheet - SheetTemplate (один ко многим)
   SheetModel.belongsTo(SheetTemplateModel, { foreignKey: 'templateId', as: 'template' });
   SheetTemplateModel.hasMany(SheetModel, { foreignKey: 'templateId', as: 'sheets' });
+
+  // Sheet - Sheet (самосвязь для источника данных)
+  SheetModel.belongsTo(SheetModel, { foreignKey: 'sourceSheetId', as: 'sourceSheet' });
+  SheetModel.hasMany(SheetModel, { foreignKey: 'sourceSheetId', as: 'dependentSheets' });
 };
 
 setupAssociations();

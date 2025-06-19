@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { Sheet, SheetTemplate } from '../types';
 
 // В продакшене используем относительный URL, в разработке - localhost
 const API_URL = process.env.NODE_ENV === 'production' 
@@ -165,17 +166,30 @@ export const rolesApi = {
   getPermissions: () => api.get('/roles/permissions'),
 };
 
-// API для шаблонов таблиц
+// Шаблоны таблиц
 export const templatesApi = {
   // Получение списка шаблонов
-  getTemplates: () => api.get('/templates'),
-
-  // Получение шаблона по ID
-  getTemplate: (id: number) => api.get(`/templates/${id}`),
+  getTemplates: async (): Promise<{ templates: Record<string, SheetTemplate[]>; total: number }> => {
+    const response = await api.get('/templates');
+    return response.data;
+  },
 
   // Создание таблицы из шаблона
-  createSheetFromTemplate: (templateId: number, data: { name: string; description?: string }) =>
-    api.post(`/templates/${templateId}/create-sheet`, data),
+  createFromTemplate: async (data: {
+    templateId: number;
+    name: string;
+    description?: string;
+    sourceSheetId?: number; // ID исходной таблицы для связи
+  }): Promise<{ message: string; sheet: Sheet }> => {
+    const response = await api.post('/templates/create', data);
+    return response.data;
+  },
+
+  // Синхронизация связанной таблицы
+  syncLinkedSheet: async (reportSheetId: number, sourceSheetId: number, targetDate?: string): Promise<{ message: string }> => {
+    const response = await api.post(`/templates/sync/${reportSheetId}/${sourceSheetId}`, { targetDate });
+    return response.data;
+  }
 };
 
 export default api; 

@@ -18,8 +18,13 @@ CREATE TABLE sheet_templates (
 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- Добавление поля template_id в таблицу sheets
-ALTER TABLE sheets ADD COLUMN template_id INT NULL AFTER column_count;
-ALTER TABLE sheets ADD FOREIGN KEY (template_id) REFERENCES sheet_templates(id) ON DELETE SET NULL;
+ALTER TABLE sheets ADD COLUMN template_id INT DEFAULT NULL COMMENT 'ID шаблона, на основе которого создана таблица';
+ALTER TABLE sheets ADD INDEX idx_sheets_template (template_id);
+
+-- Добавление поля source_sheet_id для связи между таблицами (отчеты ссылаются на журналы)
+ALTER TABLE sheets ADD COLUMN source_sheet_id INT DEFAULT NULL COMMENT 'ID исходной таблицы для автоматического заполнения (используется в отчетах)';
+ALTER TABLE sheets ADD INDEX idx_sheets_source (source_sheet_id);
+ALTER TABLE sheets ADD FOREIGN KEY (source_sheet_id) REFERENCES sheets(id) ON DELETE SET NULL;
 
 -- Вставка шаблона "Журнал заселения DMD Cottage"
 INSERT INTO sheet_templates (name, description, category, structure, row_count, column_count) VALUES

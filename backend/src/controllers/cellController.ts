@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { Cell, Sheet, UserSheet, CellHistory, User } from '../models';
+import { updateLinkedReports } from './sheetTemplateController';
 
 // Обновление ячейки
 export const updateCell = async (req: Request, res: Response) => {
@@ -41,15 +42,23 @@ export const updateCell = async (req: Request, res: Response) => {
     // Поиск или создание ячейки
     let cell = existingCell;
 
-    if (cell) {
-      // Определяем тип изменения на основе того, что действительно изменилось
-      let changeType: 'value' | 'formula' | 'format' = 'value';
-      
-      if (cell.formula !== formula && formula !== undefined) {
+    let changeType: 'value' | 'formula' | 'format' | 'create' | 'delete' = 'value';
+    let oldValue = '';
+    let oldFormula = '';
+    let oldFormat = {};
+
+          if (cell) {
+        // Сохраняем предыдущие значения для истории
+        oldValue = cell.value || '';
+        oldFormula = cell.formula || '';
+        oldFormat = cell.format || {};
+
+      // Определяем тип изменения
+      if (value !== undefined && value !== cell.value) {
+        changeType = 'value';
+      } else if (formula !== undefined && formula !== cell.formula) {
         changeType = 'formula';
-      } else if (cell.value !== value && value !== undefined) {
-        changeType = 'value';  
-      } else if (format && JSON.stringify(cell.format) !== JSON.stringify(format)) {
+      } else if (format !== undefined && JSON.stringify(format) !== JSON.stringify(cell.format)) {
         changeType = 'format';
       }
 
@@ -69,11 +78,15 @@ export const updateCell = async (req: Request, res: Response) => {
         changeType
       });
 
-      await cell.update({
-        value: value || '',
-        formula: formula || null,
-        format: format || cell.format
-      });
+      // Обновление существующей ячейки
+      const updateData: any = {};
+      if (value !== undefined) updateData.value = value;
+      if (formula !== undefined) updateData.formula = formula;
+      if (format !== undefined) updateData.format = format;
+
+      if (Object.keys(updateData).length > 0) {
+        await cell.update(updateData);
+      }
     } else {
       cell = await Cell.create({
         sheetId: parseInt(sheetId),
@@ -102,15 +115,43 @@ export const updateCell = async (req: Request, res: Response) => {
       });
     }
 
+    // Записываем в историю
+    await CellHistory.create({
+      cellId: cell.id,
+      sheetId: parseInt(sheetId),
+      row: parseInt(row),
+      column: parseInt(column),
+      changedBy: userId,
+      changeType,
+      oldValue,
+      newValue: cell.value || '',
+      oldFormula,
+      newFormula: cell.formula || '',
+      oldFormat: oldFormat,
+      newFormat: cell.format || {}
+    });
+
+    // Обновляем связанные отчеты при изменении данных в журнале
+    try {
+      const updatedReports = await updateLinkedReports(parseInt(sheetId));
+      if (updatedReports > 0) {
+        console.log(`✅ Обновлено ${updatedReports} связанных отчетов`);
+      }
+    } catch (error) {
+      console.error('Ошибка обновления связанных отчетов:', error);
+      // Не прерываем выполнение если ошибка в синхронизации
+    }
+
     res.json({
       message: 'Ячейка обновлена',
-      cell
+      cell,
+      changeType
     });
 
   } catch (error) {
     console.error('Ошибка обновления ячейки:', error);
     res.status(500).json({
-      error: 'Ошибка сервера'
+      error: 'Ошибка сервера при обновлении ячейки'
     });
   }
 };

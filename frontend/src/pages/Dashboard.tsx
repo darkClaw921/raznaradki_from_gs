@@ -26,6 +26,10 @@ import {
   Tab,
   CardMedia,
   Divider,
+  FormControl,
+  InputLabel,
+  Select,
+  CircularProgress,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -42,7 +46,7 @@ import { setSheets, setLoading } from '../store/sheetSlice';
 import { sheetsApi, templatesApi } from '../services/api';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
-import { SheetTemplate } from '../types';
+import { SheetTemplate, Sheet } from '../types';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -74,14 +78,14 @@ const Dashboard: React.FC = () => {
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null);
-  const [tabValue, setTabValue] = useState(0);
-  const [templates, setTemplates] = useState<SheetTemplate[]>([]);
+  const [selectedTab, setSelectedTab] = useState(0);
+  const [templates, setTemplates] = useState<Record<string, SheetTemplate[]>>({});
   const [selectedTemplate, setSelectedTemplate] = useState<SheetTemplate | null>(null);
-  const [newSheetForm, setNewSheetForm] = useState({
-    name: '',
-    description: '',
-    isPublic: false,
-  });
+  const [newSheetName, setNewSheetName] = useState('');
+  const [newSheetDescription, setNewSheetDescription] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [sourceSheetId, setSourceSheetId] = useState<number | null>(null);
+  const [availableJournals, setAvailableJournals] = useState<Sheet[]>([]);
 
   useEffect(() => {
     loadSheets();
@@ -101,57 +105,73 @@ const Dashboard: React.FC = () => {
   };
 
   const loadTemplates = async () => {
+    if (Object.keys(templates).length > 0) return;
+    
+    setCreating(true);
     try {
       const response = await templatesApi.getTemplates();
-      setTemplates(response.data.templates);
+      setTemplates(response.templates);
     } catch (error) {
       console.error('Ошибка загрузки шаблонов:', error);
+    } finally {
+      setCreating(false);
     }
   };
 
-  const handleCreateSheet = async () => {
+  const handleCreateDialog = () => {
+    setCreateDialogOpen(true);
+    loadTemplates();
+    loadAvailableJournals();
+  };
+
+  const loadAvailableJournals = () => {
+    const journals = sheets.filter((sheet: any) => 
+      sheet.template?.name === 'Журнал заселения DMD Cottage'
+    );
+    setAvailableJournals(journals);
+  };
+
+  const handleTemplateSelect = (template: SheetTemplate) => {
+    setSelectedTemplate(template);
+    setNewSheetName(template.name);
+    setNewSheetDescription(template.description);
+    
+    if (template.name === 'Отчет заселения/выселения DMD Cottage' && availableJournals.length > 0) {
+      setSourceSheetId(availableJournals[0].id);
+    } else {
+      setSourceSheetId(null);
+    }
+  };
+
+  const handleCreateFromTemplate = async () => {
+    if (!selectedTemplate || !newSheetName.trim()) return;
+
+    setCreating(true);
     try {
-      if (!newSheetForm.name) return;
-      
-      let response;
-      if (selectedTemplate) {
-        // Создание из шаблона
-        response = await templatesApi.createSheetFromTemplate(selectedTemplate.id, {
-          name: newSheetForm.name,
-          description: newSheetForm.description,
-        });
-      } else {
-        // Обычное создание
-        response = await sheetsApi.createSheet(newSheetForm);
-      }
-      
-      await loadSheets(); // Перезагружаем список
+      const response = await templatesApi.createFromTemplate({
+        templateId: selectedTemplate.id,
+        name: newSheetName,
+        description: newSheetDescription,
+        sourceSheetId: sourceSheetId || undefined
+      });
+
+      await loadSheets();
       setCreateDialogOpen(false);
-      setNewSheetForm({ name: '', description: '', isPublic: false });
-      setSelectedTemplate(null);
-      setTabValue(0);
-      
-      // Переходим к созданной таблице
-      navigate(`/sheet/${response.data.sheet.id}`);
-    } catch (error) {
-      console.error('Ошибка создания таблицы:', error);
+      resetDialogState();
+      navigate(`/sheet/${response.sheet.id}`);
+    } catch (error: any) {
+      console.error('Ошибка создания таблицы из шаблона:', error);
+    } finally {
+      setCreating(false);
     }
   };
 
   const handleCloseDialog = () => {
     setCreateDialogOpen(false);
-    setNewSheetForm({ name: '', description: '', isPublic: false });
+    setNewSheetName('');
+    setNewSheetDescription('');
     setSelectedTemplate(null);
-    setTabValue(0);
-  };
-
-  const handleTemplateSelect = (template: SheetTemplate) => {
-    setSelectedTemplate(template);
-    setNewSheetForm({
-      ...newSheetForm,
-      name: template.name,
-      description: template.description,
-    });
+    setSelectedTab(0);
   };
 
   const handleLogout = () => {
@@ -167,7 +187,37 @@ const Dashboard: React.FC = () => {
     setUserMenuAnchor(null);
   };
 
-  const groupedTemplates = templates.reduce((acc, template) => {
+  const resetDialogState = () => {
+    setNewSheetName('');
+    setNewSheetDescription('');
+    setSelectedTemplate(null);
+    setSelectedTab(0);
+    setSourceSheetId(null);
+  };
+
+  const handleCreateEmptySheet = async () => {
+    if (!newSheetName.trim()) return;
+
+    setCreating(true);
+    try {
+      const response = await sheetsApi.createSheet({
+        name: newSheetName,
+        description: newSheetDescription || undefined,
+        isPublic: false
+      });
+
+      await loadSheets();
+      setCreateDialogOpen(false);
+      resetDialogState();
+      navigate(`/sheet/${response.data.sheet.id}`);
+    } catch (error: any) {
+      console.error('Ошибка создания таблицы:', error);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const groupedTemplates = Object.values(templates).flat().reduce((acc, template) => {
     if (!acc[template.category]) {
       acc[template.category] = [];
     }
@@ -220,7 +270,7 @@ const Dashboard: React.FC = () => {
             <Button
               variant="contained"
               startIcon={<AddIcon />}
-              onClick={() => setCreateDialogOpen(true)}
+              onClick={handleCreateDialog}
             >
               Создать таблицу
             </Button>
@@ -299,7 +349,7 @@ const Dashboard: React.FC = () => {
             <Button
               variant="contained"
               startIcon={<AddIcon />}
-              onClick={() => setCreateDialogOpen(true)}
+              onClick={handleCreateDialog}
               sx={{ mt: 2 }}
             >
               Создать таблицу
@@ -313,7 +363,7 @@ const Dashboard: React.FC = () => {
         color="primary"
         aria-label="add"
         sx={{ position: 'fixed', bottom: 24, right: 24 }}
-        onClick={() => setCreateDialogOpen(true)}
+        onClick={handleCreateDialog}
       >
         <AddIcon />
       </Fab>
@@ -346,23 +396,23 @@ const Dashboard: React.FC = () => {
         </DialogTitle>
         <DialogContent>
           <Tabs 
-            value={tabValue} 
-            onChange={(_, newValue) => setTabValue(newValue)}
+            value={selectedTab} 
+            onChange={(_, newValue) => setSelectedTab(newValue)}
             sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
           >
             <Tab label="Пустая таблица" />
             <Tab label="Из шаблона" />
           </Tabs>
 
-          <TabPanel value={tabValue} index={0}>
+          <TabPanel value={selectedTab} index={0}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <TextField
                 autoFocus
                 label="Название таблицы"
                 fullWidth
                 variant="outlined"
-                value={newSheetForm.name}
-                onChange={(e) => setNewSheetForm({ ...newSheetForm, name: e.target.value })}
+                value={newSheetName}
+                onChange={(e) => setNewSheetName(e.target.value)}
               />
               <TextField
                 label="Описание (необязательно)"
@@ -370,89 +420,114 @@ const Dashboard: React.FC = () => {
                 multiline
                 rows={3}
                 variant="outlined"
-                value={newSheetForm.description}
-                onChange={(e) => setNewSheetForm({ ...newSheetForm, description: e.target.value })}
+                value={newSheetDescription}
+                onChange={(e) => setNewSheetDescription(e.target.value)}
               />
             </Box>
           </TabPanel>
 
-          <TabPanel value={tabValue} index={1}>
+          <TabPanel value={selectedTab} index={1}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              {Object.entries(groupedTemplates).map(([category, categoryTemplates]) => (
-                <Box key={category}>
-                  <Typography variant="h6" gutterBottom sx={{ color: 'primary.main' }}>
-                    {category === 'hotel' ? 'Гостиничный бизнес' : category}
-                  </Typography>
-                  <Grid container spacing={2}>
-                    {categoryTemplates.map((template) => (
-                      <Grid size={{ xs: 12, sm: 6 }} key={template.id}>
-                        <Card 
-                          sx={{ 
-                            cursor: 'pointer',
-                            border: selectedTemplate?.id === template.id ? 2 : 1,
-                            borderColor: selectedTemplate?.id === template.id ? 'primary.main' : 'divider',
-                            '&:hover': { borderColor: 'primary.main' }
-                          }}
-                          onClick={() => handleTemplateSelect(template)}
-                        >
-                          <CardMedia
-                            sx={{ 
-                              height: 80, 
-                              background: 'linear-gradient(45deg, #e3f2fd 30%, #bbdefb 90%)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center'
-                            }}
-                          >
-                            <Description sx={{ fontSize: 40, color: 'primary.main' }} />
-                          </CardMedia>
-                          <CardContent sx={{ pb: 1 }}>
-                            <Typography variant="subtitle1" component="h3" gutterBottom>
-                              {template.name}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              {template.description}
-                            </Typography>
-                            <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
-                              <Chip 
-                                label={`${template.rowCount}×${template.columnCount}`} 
-                                size="small" 
-                                variant="outlined" 
-                              />
-                            </Box>
-                          </CardContent>
-                        </Card>
-                      </Grid>
-                    ))}
-                  </Grid>
+              {creating ? (
+                <Box display="flex" justifyContent="center" py={4}>
+                  <CircularProgress />
                 </Box>
-              ))}
-
-              {selectedTemplate && (
+              ) : (
                 <>
-                  <Divider />
-                  <Box>
-                    <Typography variant="h6" gutterBottom>
-                      Настройки таблицы
-                    </Typography>
-                    <TextField
-                      label="Название таблицы"
-                      fullWidth
-                      variant="outlined"
-                      value={newSheetForm.name}
-                      onChange={(e) => setNewSheetForm({ ...newSheetForm, name: e.target.value })}
-                      sx={{ mb: 2 }}
-                    />
-                    <TextField
-                      label="Описание (необязательно)"
-                      fullWidth
-                      multiline
-                      rows={2}
-                      variant="outlined"
-                      value={newSheetForm.description}
-                      onChange={(e) => setNewSheetForm({ ...newSheetForm, description: e.target.value })}
-                    />
-                  </Box>
+                  {Object.entries(groupedTemplates).map(([category, categoryTemplates]) => (
+                    <Box key={category}>
+                      <Typography variant="h6" gutterBottom sx={{ color: 'primary.main' }}>
+                        {category === 'hotel' ? 'Гостиничный бизнес' : category}
+                      </Typography>
+                      <Grid container spacing={2}>
+                        {categoryTemplates.map((template) => (
+                          <Grid size={{ xs: 12, sm: 6 }} key={template.id}>
+                            <Card 
+                              sx={{ 
+                                cursor: 'pointer',
+                                border: selectedTemplate?.id === template.id ? 2 : 1,
+                                borderColor: selectedTemplate?.id === template.id ? 'primary.main' : 'divider',
+                                '&:hover': { borderColor: 'primary.main' }
+                              }}
+                              onClick={() => handleTemplateSelect(template)}
+                            >
+                              <CardMedia
+                                sx={{ 
+                                  height: 80, 
+                                  background: 'linear-gradient(45deg, #e3f2fd 30%, #bbdefb 90%)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                              >
+                                <Description sx={{ fontSize: 40, color: 'primary.main' }} />
+                              </CardMedia>
+                              <CardContent sx={{ pb: 1 }}>
+                                <Typography variant="subtitle1" component="h3" gutterBottom>
+                                  {template.name}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                  {template.description}
+                                </Typography>
+                                <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+                                  <Chip 
+                                    label={`${template.rowCount}×${template.columnCount}`} 
+                                    size="small" 
+                                    variant="outlined" 
+                                  />
+                                </Box>
+                              </CardContent>
+                            </Card>
+                          </Grid>
+                        ))}
+                      </Grid>
+                    </Box>
+                  ))}
+
+                  {selectedTemplate && (
+                    <>
+                      <Divider />
+                      <Box>
+                        <Typography variant="h6" gutterBottom>
+                          Настройки таблицы
+                        </Typography>
+                        <TextField
+                          label="Название таблицы"
+                          fullWidth
+                          variant="outlined"
+                          value={newSheetName}
+                          onChange={(e) => setNewSheetName(e.target.value)}
+                          sx={{ mb: 2 }}
+                        />
+                        <TextField
+                          label="Описание (необязательно)"
+                          fullWidth
+                          multiline
+                          rows={2}
+                          variant="outlined"
+                          value={newSheetDescription}
+                          onChange={(e) => setNewSheetDescription(e.target.value)}
+                        />
+                        {selectedTemplate?.name === 'Отчет заселения/выселения DMD Cottage' && (
+                          <FormControl fullWidth sx={{ mt: 2 }}>
+                            <InputLabel>Связать с журналом заселения</InputLabel>
+                            <Select
+                              value={sourceSheetId || ''}
+                              onChange={(e) => setSourceSheetId(Number(e.target.value) || null)}
+                              label="Связать с журналом заселения"
+                            >
+                              <MenuItem value="">Не связывать</MenuItem>
+                              {availableJournals.map((journal: any) => (
+                                <MenuItem key={journal.id} value={journal.id}>
+                                  {journal.name}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        )}
+                      </Box>
+                    </>
+                  )}
                 </>
               )}
             </Box>
@@ -462,13 +537,23 @@ const Dashboard: React.FC = () => {
           <Button onClick={handleCloseDialog}>
             Отмена
           </Button>
-          <Button 
-            onClick={handleCreateSheet} 
-            variant="contained" 
-            disabled={!newSheetForm.name}
-          >
-            {selectedTemplate ? `Создать из шаблона "${selectedTemplate.name}"` : 'Создать'}
-          </Button>
+          {selectedTab === 0 ? (
+            <Button 
+              onClick={handleCreateEmptySheet}
+              disabled={!newSheetName.trim() || creating}
+              variant="contained"
+            >
+              {creating ? <CircularProgress size={20} /> : 'Создать'}
+            </Button>
+          ) : (
+            <Button 
+              onClick={handleCreateFromTemplate}
+              disabled={!selectedTemplate || !newSheetName.trim() || creating}
+              variant="contained"
+            >
+              {creating ? <CircularProgress size={20} /> : 'Создать из шаблона'}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </>

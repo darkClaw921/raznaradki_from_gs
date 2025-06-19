@@ -35,11 +35,16 @@ export interface Sheet {
   isPublic: boolean;
   rowCount: number;
   columnCount: number;
+  templateId?: number;
+  sourceSheetId?: number; // ID исходной таблицы для отчетов
   settings?: any;
   createdAt: string;
   updatedAt: string;
   creator?: User;
   users?: User[];
+  template?: SheetTemplate;
+  sourceSheet?: Sheet; // Исходная таблица для отчетов
+  dependentSheets?: Sheet[]; // Связанные отчеты
   cells?: Cell[];
 }
 
