@@ -206,6 +206,10 @@ ALTER TABLE sheets ADD COLUMN source_sheet_id INT DEFAULT NULL COMMENT 'ID ис�
 ALTER TABLE sheets ADD INDEX idx_sheets_source (source_sheet_id);
 ALTER TABLE sheets ADD FOREIGN KEY (source_sheet_id) REFERENCES sheets(id) ON DELETE SET NULL;
 
+-- Добавление поля report_date для хранения даты отчета
+ALTER TABLE sheets ADD COLUMN report_date DATE DEFAULT NULL COMMENT 'Дата отчета для фильтрации связанных данных';
+ALTER TABLE sheets ADD INDEX idx_sheets_report_date (report_date);
+
 -- Вставка шаблона "Журнал заселения DMD Cottage"
 INSERT INTO sheet_templates (name, description, category, structure, row_count, column_count) VALUES
 ('Журнал заселения DMD Cottage', 'Журнал учета заселения и выселения гостей коттеджа', 'hotel', 

@@ -10,6 +10,7 @@ export interface SheetAttributes {
   columnCount: number;
   templateId?: number;
   sourceSheetId?: number;
+  reportDate?: string;
   settings?: any;
   createdAt?: Date;
   updatedAt?: Date;
@@ -29,6 +30,7 @@ class Sheet extends Model<SheetAttributes, SheetCreationAttributes> implements S
   public columnCount!: number;
   public templateId?: number;
   public sourceSheetId?: number;
+  public reportDate?: string;
   public settings?: any;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
@@ -80,6 +82,12 @@ export const SheetFactory = (sequelize: Sequelize) => {
         allowNull: true,
         field: 'source_sheet_id',
         comment: 'ID исходной таблицы для автоматического заполнения (используется в отчетах)',
+      },
+      reportDate: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+        field: 'report_date',
+        comment: 'Дата отчета для фильтрации связанных данных',
       },
       settings: {
         type: DataTypes.JSON,

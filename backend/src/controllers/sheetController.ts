@@ -104,6 +104,11 @@ export const getSheet = async (req: Request, res: Response) => {
           }
         },
         {
+          model: SheetTemplate,
+          as: 'template',
+          attributes: ['id', 'name', 'description', 'category']
+        },
+        {
           model: Cell,
           as: 'cells'
         }

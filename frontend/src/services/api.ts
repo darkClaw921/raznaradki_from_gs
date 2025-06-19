@@ -189,6 +189,12 @@ export const templatesApi = {
   syncLinkedSheet: async (reportSheetId: number, sourceSheetId: number, targetDate?: string): Promise<{ message: string }> => {
     const response = await api.post(`/templates/sync/${reportSheetId}/${sourceSheetId}`, { targetDate });
     return response.data;
+  },
+
+  // Обновление даты отчета
+  updateReportDate: async (sheetId: number, reportDate: string): Promise<{ message: string; synchronized: boolean }> => {
+    const response = await api.put(`/templates/update-report-date/${sheetId}`, { reportDate });
+    return response.data;
   }
 };
 

@@ -9,15 +9,18 @@ import {
   IconButton,
   Button,
   CircularProgress,
+  TextField,
+  Chip,
 } from '@mui/material';
 import {
   ArrowBack,
   Share,
   People,
+  CalendarToday,
 } from '@mui/icons-material';
 import { AppDispatch, RootState } from '../store';
 import { setCurrentSheet, setLoading } from '../store/sheetSlice';
-import { sheetsApi } from '../services/api';
+import { sheetsApi, templatesApi } from '../services/api';
 import Spreadsheet from '../components/Spreadsheet/Spreadsheet';
 import MembersDialog from '../components/Spreadsheet/MembersDialog';
 
@@ -30,6 +33,8 @@ const Sheet: React.FC = () => {
 
   const [userPermissions, setUserPermissions] = useState<string>('read');
   const [membersDialogOpen, setMembersDialogOpen] = useState(false);
+  const [reportDate, setReportDate] = useState<string>('');
+  const [isUpdatingDate, setIsUpdatingDate] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -43,6 +48,12 @@ const Sheet: React.FC = () => {
       const response = await sheetsApi.getSheet(sheetId);
       dispatch(setCurrentSheet(response.data.sheet));
       setUserPermissions(response.data.userPermissions || 'read');
+      
+      // Инициализируем дату отчета если это связанная таблица
+      if (response.data.sheet.reportDate) {
+        setReportDate(response.data.sheet.reportDate);
+      }
+      
     } catch (error) {
       console.error('Ошибка загрузки таблицы:', error);
       navigate('/dashboard');
@@ -58,6 +69,28 @@ const Sheet: React.FC = () => {
   const handleShareSheet = () => {
     // Функция "Поделиться" - открываем диалог участников
     setMembersDialogOpen(true);
+  };
+
+  const handleReportDateChange = async (newDate: string) => {
+    if (!currentSheet?.sourceSheetId) return;
+    
+    try {
+      setIsUpdatingDate(true);
+      
+      // Обновляем дату отчета на сервере
+      await templatesApi.updateReportDate(currentSheet.id, newDate);
+      
+      // Обновляем локальное состояние
+      setReportDate(newDate);
+      
+      // Перезагружаем таблицу чтобы увидеть обновленные данные
+      await loadSheet(id!);
+      
+    } catch (error) {
+      console.error('Ошибка обновления даты отчета:', error);
+    } finally {
+      setIsUpdatingDate(false);
+    }
   };
 
   if (loading) {
@@ -88,6 +121,8 @@ const Sheet: React.FC = () => {
 
   const canManageAccess = userPermissions === 'admin' || userPermissions === 'owner';
 
+  const isLinkedReport = currentSheet?.sourceSheetId && currentSheet?.template?.name?.includes('Отчет');
+
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <AppBar position="static" color="default" elevation={1}>
@@ -103,6 +138,36 @@ const Sheet: React.FC = () => {
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             {currentSheet.name}
           </Typography>
+
+          {/* Компонент выбора даты отчета */}
+          {isLinkedReport && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2 }}>
+              <CalendarToday sx={{ fontSize: 16, color: 'text.secondary' }} />
+              <TextField
+                type="date"
+                size="small"
+                value={reportDate || ''}
+                onChange={(e) => handleReportDateChange(e.target.value)}
+                disabled={isUpdatingDate}
+                InputLabelProps={{ shrink: true }}
+                sx={{ 
+                  width: 150,
+                  '& .MuiInputBase-input': {
+                    fontSize: '0.875rem',
+                    padding: '6px 8px'
+                  }
+                }}
+              />
+              {currentSheet?.sourceSheetId && (
+                <Chip
+                  label="Связанный отчет"
+                  size="small"
+                  color="primary"
+                  variant="outlined"
+                />
+              )}
+            </Box>
+          )}
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             {/* Кнопка участников - доступна всем для просмотра */}

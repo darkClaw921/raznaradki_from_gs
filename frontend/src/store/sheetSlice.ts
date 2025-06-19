@@ -1,17 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-
-export interface Sheet {
-  id: number;
-  name: string;
-  description?: string;
-  createdBy: number;
-  isPublic: boolean;
-  rowCount: number;
-  columnCount: number;
-  settings?: any;
-  createdAt: string;
-  updatedAt: string;
-}
+import { Sheet } from '../types';
 
 interface SheetState {
   sheets: Sheet[];

@@ -3,27 +3,28 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "react-scripts": "5.0.1",
-    "react-router-dom": "^7.6.2",
-    "@reduxjs/toolkit": "^2.8.1",
-    "react-redux": "^9.2.0",
-    "@mui/material": "^7.1.1",
-    "@mui/icons-material": "^7.1.1",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
+    "@mui/icons-material": "^7.1.1",
+    "@mui/material": "^7.1.1",
+    "@mui/x-date-pickers": "^8.5.2",
+    "@reduxjs/toolkit": "^2.8.1",
     "axios": "^1.10.0",
-    "socket.io-client": "^4.8.1",
-    "react-virtualized": "^9.22.5",
+    "date-fns": "^4.1.0",
     "lodash": "^4.17.21",
-    "date-fns": "^4.1.0"
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-redux": "^9.2.0",
+    "react-router-dom": "^7.6.2",
+    "react-scripts": "5.0.1",
+    "react-virtualized": "^9.22.5",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
+    "@types/lodash": "^4.17.13",
+    "@types/node": "^24.0.3",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "@types/node": "^24.0.3",
-    "@types/lodash": "^4.17.13",
     "@types/react-virtualized": "^9.22.2",
     "typescript": "^5.8.3"
   },
@@ -56,4 +57,4 @@
       "last 1 safari version"
     ]
   }
-} 
+}

@@ -37,6 +37,7 @@ export interface Sheet {
   columnCount: number;
   templateId?: number;
   sourceSheetId?: number; // ID исходной таблицы для отчетов
+  reportDate?: string; // Дата отчета для фильтрации связанных данных
   settings?: any;
   createdAt: string;
   updatedAt: string;
