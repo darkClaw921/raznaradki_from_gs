@@ -551,9 +551,9 @@ const transformJournalToReport = async (journalCells: any[], reportSheetId: numb
     const isCheckin = convertToISO(checkinDate) === reportDate;
 
     if (isCheckout || isCheckin) {
-      // Создаем уникальный ключ для группировки: ID источника + название таблицы + ФИО
-      // Это позволит отображать записи из разных журналов отдельно
-      const uniqueKey = `${sourceSheetId}:${tableName}:${guestName}`;
+      // Создаем уникальный ключ для группировки: ID источника + название таблицы + дата отчета
+      // Это позволит объединить выселение и заселение из одного журнала на одну дату в одну строку
+      const uniqueKey = `${sourceSheetId}:${tableName}:${reportDate}`;
       
       console.log(`🔍 Обработка записи: источник="${tableName}" (ID: ${sourceSheetId}), гость="${guestName}", заселение="${isCheckin}", выселение="${isCheckout}"`);
       
@@ -567,24 +567,46 @@ const transformJournalToReport = async (journalCells: any[], reportSheetId: numb
       }
 
       if (isCheckout) {
-        addressGroups[uniqueKey].checkout = {
-          guestName,
-          phone,
-          comment
-        };
+        // Если уже есть данные о выселении, объединяем информацию (может быть несколько выселений)
+        if (addressGroups[uniqueKey].checkout) {
+          // Объединяем данные о нескольких выселениях
+          addressGroups[uniqueKey].checkout.guestName += `, ${guestName}`;
+          addressGroups[uniqueKey].checkout.phone += `, ${phone}`;
+          addressGroups[uniqueKey].checkout.comment += `; ${comment}`;
+        } else {
+          addressGroups[uniqueKey].checkout = {
+            guestName,
+            phone,
+            comment
+          };
+        }
       }
 
       if (isCheckin) {
-        addressGroups[uniqueKey].checkin = {
-          guestName,
-          phone,
-          checkoutDate,
-          dayCount,
-          totalAmount,
-          prepayment,
-          additionalPayment,
-          comment
-        };
+        // Если уже есть данные о заселении, объединяем информацию (может быть несколько заселений)
+        if (addressGroups[uniqueKey].checkin) {
+          // Объединяем данные о нескольких заселениях
+          addressGroups[uniqueKey].checkin.guestName += `, ${guestName}`;
+          addressGroups[uniqueKey].checkin.phone += `, ${phone}`;
+          addressGroups[uniqueKey].checkin.comment += `; ${comment}`;
+          // Для числовых полей берем первое значение или суммируем
+          if (totalAmount && !isNaN(parseFloat(totalAmount.toString().replace(/\s/g, '')))) {
+            const currentTotal = parseFloat(addressGroups[uniqueKey].checkin.totalAmount?.toString().replace(/\s/g, '') || '0');
+            const newTotal = parseFloat(totalAmount.toString().replace(/\s/g, ''));
+            addressGroups[uniqueKey].checkin.totalAmount = (currentTotal + newTotal).toLocaleString();
+          }
+        } else {
+          addressGroups[uniqueKey].checkin = {
+            guestName,
+            phone,
+            checkoutDate,
+            dayCount,
+            totalAmount,
+            prepayment,
+            additionalPayment,
+            comment
+          };
+        }
       }
 
       // Определяем статус дома на основе наличия операций
