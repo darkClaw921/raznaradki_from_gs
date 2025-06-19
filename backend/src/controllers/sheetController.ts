@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { Sheet, User, UserSheet, Cell } from '../models';
+import { Sheet, User, UserSheet, Cell, SheetTemplate } from '../models';
 import { Op } from 'sequelize';
 
 // Получение списка таблиц пользователя
@@ -28,6 +28,11 @@ export const getSheets = async (req: Request, res: Response) => {
           through: {
             attributes: ['permission', 'rowRestrictions', 'columnRestrictions']
           }
+        },
+        {
+          model: SheetTemplate,
+          as: 'template',
+          attributes: ['id', 'name', 'description', 'category']
         }
       ],
       order: [['updatedAt', 'DESC']]
@@ -45,6 +50,11 @@ export const getSheets = async (req: Request, res: Response) => {
               model: User,
               as: 'creator',
               attributes: ['id', 'firstName', 'lastName', 'email']
+            },
+            {
+              model: SheetTemplate,
+              as: 'template',
+              attributes: ['id', 'name', 'description', 'category']
             }
           ]
         }

@@ -118,10 +118,18 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const handleCreateDialog = () => {
+  const handleCreateDialog = async () => {
     setCreateDialogOpen(true);
     loadTemplates();
-    loadAvailableJournals();
+    
+    // Убеждаемся что таблицы загружены перед фильтрацией журналов
+    if (sheets.length === 0) {
+      await loadSheets();
+    }
+    
+    setTimeout(() => {
+      loadAvailableJournals();
+    }, 100);
   };
 
   const loadAvailableJournals = () => {
@@ -136,8 +144,19 @@ const Dashboard: React.FC = () => {
     setNewSheetName(template.name);
     setNewSheetDescription(template.description);
     
-    if (template.name === 'Отчет заселения/выселения DMD Cottage' && availableJournals.length > 0) {
-      setSourceSheetId(availableJournals[0].id);
+    // Обновляем список журналов при выборе шаблона отчета
+    if (template.name === 'Отчет заселения/выселения DMD Cottage') {
+      // Сначала загружаем журналы
+      const journals = sheets.filter((sheet: any) => {
+        return sheet.template?.name === 'Журнал заселения DMD Cottage';
+      });
+      
+      setAvailableJournals(journals);
+      
+      // Устанавливаем первый журнал по умолчанию если есть
+      if (journals.length > 0) {
+        setSourceSheetId(journals[0].id);
+      }
     } else {
       setSourceSheetId(null);
     }
