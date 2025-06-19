@@ -26,10 +26,8 @@ import {
   Tab,
   CardMedia,
   Divider,
-  FormControl,
-  InputLabel,
-  Select,
   CircularProgress,
+  Autocomplete,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -84,7 +82,7 @@ const Dashboard: React.FC = () => {
   const [newSheetName, setNewSheetName] = useState('');
   const [newSheetDescription, setNewSheetDescription] = useState('');
   const [creating, setCreating] = useState(false);
-  const [sourceSheetId, setSourceSheetId] = useState<number | null>(null);
+  const [sourceSheetIds, setSourceSheetIds] = useState<number[]>([]);
   const [availableJournals, setAvailableJournals] = useState<Sheet[]>([]);
 
   useEffect(() => {
@@ -155,11 +153,11 @@ const Dashboard: React.FC = () => {
       
       // Устанавливаем первый журнал по умолчанию если есть
       if (journals.length > 0) {
-        setSourceSheetId(journals[0].id);
+        setSourceSheetIds([journals[0].id]);
       }
-    } else {
-      setSourceSheetId(null);
-    }
+          } else {
+        setSourceSheetIds([]);
+      }
   };
 
   const handleCreateFromTemplate = async () => {
@@ -171,7 +169,7 @@ const Dashboard: React.FC = () => {
         templateId: selectedTemplate.id,
         name: newSheetName,
         description: newSheetDescription,
-        sourceSheetId: sourceSheetId || undefined
+        sourceSheetIds: sourceSheetIds.length > 0 ? sourceSheetIds : undefined
       });
 
       await loadSheets();
@@ -211,7 +209,7 @@ const Dashboard: React.FC = () => {
     setNewSheetDescription('');
     setSelectedTemplate(null);
     setSelectedTab(0);
-    setSourceSheetId(null);
+            setSourceSheetIds([]);
   };
 
   const handleCreateEmptySheet = async () => {
@@ -528,21 +526,35 @@ const Dashboard: React.FC = () => {
                           onChange={(e) => setNewSheetDescription(e.target.value)}
                         />
                         {selectedTemplate?.name === 'Отчет заселения/выселения DMD Cottage' && (
-                          <FormControl fullWidth sx={{ mt: 2 }}>
-                            <InputLabel>Связать с журналом заселения</InputLabel>
-                            <Select
-                              value={sourceSheetId || ''}
-                              onChange={(e) => setSourceSheetId(Number(e.target.value) || null)}
-                              label="Связать с журналом заселения"
-                            >
-                              <MenuItem value="">Не связывать</MenuItem>
-                              {availableJournals.map((journal: any) => (
-                                <MenuItem key={journal.id} value={journal.id}>
-                                  {journal.name}
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
+                          <Autocomplete
+                            multiple
+                            sx={{ mt: 2 }}
+                            options={availableJournals}
+                            getOptionLabel={(journal: any) => journal.name}
+                            value={availableJournals.filter(journal => sourceSheetIds.includes(journal.id))}
+                            onChange={(_, newValue) => {
+                              setSourceSheetIds(newValue.map((journal: any) => journal.id));
+                            }}
+                            renderInput={(params) => (
+                              <TextField
+                                {...params}
+                                label="Связать с журналами заселения"
+                                placeholder="Выберите журналы..."
+                              />
+                            )}
+                                                         renderTags={(tagValue, getTagProps) =>
+                               tagValue.map((option: any, index) => (
+                                 <Chip
+                                   label={option.name}
+                                   {...getTagProps({ index })}
+                                   color="primary"
+                                   variant="outlined"
+                                 />
+                               ))
+                             }
+                            noOptionsText="Нет доступных журналов"
+                            isOptionEqualToValue={(option: any, value: any) => option.id === value.id}
+                          />
                         )}
                       </Box>
                     </>

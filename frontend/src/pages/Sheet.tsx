@@ -35,6 +35,7 @@ const Sheet: React.FC = () => {
   const [membersDialogOpen, setMembersDialogOpen] = useState(false);
   const [reportDate, setReportDate] = useState<string>('');
   const [isUpdatingDate, setIsUpdatingDate] = useState(false);
+  const [linkedJournals, setLinkedJournals] = useState<any[]>([]);
 
   useEffect(() => {
     if (id) {
@@ -52,6 +53,17 @@ const Sheet: React.FC = () => {
       // Инициализируем дату отчета если это связанная таблица
       if (response.data.sheet.reportDate) {
         setReportDate(response.data.sheet.reportDate);
+      }
+
+      // Проверяем связанные журналы для отчетов
+      if (response.data.sheet.template?.name?.includes('Отчет')) {
+        try {
+          const reportSourcesResponse = await templatesApi.getReportSources(parseInt(sheetId));
+          setLinkedJournals(reportSourcesResponse.sources || []);
+        } catch (error) {
+          console.error('Ошибка загрузки связанных журналов:', error);
+          setLinkedJournals([]);
+        }
       }
       
     } catch (error) {
@@ -72,7 +84,7 @@ const Sheet: React.FC = () => {
   };
 
   const handleReportDateChange = async (newDate: string) => {
-    if (!currentSheet?.sourceSheetId) return;
+    if (!isLinkedReport || !currentSheet) return;
     
     try {
       setIsUpdatingDate(true);
@@ -121,7 +133,7 @@ const Sheet: React.FC = () => {
 
   const canManageAccess = userPermissions === 'admin' || userPermissions === 'owner';
 
-  const isLinkedReport = currentSheet?.sourceSheetId && currentSheet?.template?.name?.includes('Отчет');
+  const isLinkedReport = currentSheet?.template?.name?.includes('Отчет') && linkedJournals.length > 0;
 
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -158,9 +170,9 @@ const Sheet: React.FC = () => {
                   }
                 }}
               />
-              {currentSheet?.sourceSheetId && (
+              {isLinkedReport && (
                 <Chip
-                  label="Связанный отчет"
+                  label={`Связанные журналы (${linkedJournals.length})`}
                   size="small"
                   color="primary"
                   variant="outlined"

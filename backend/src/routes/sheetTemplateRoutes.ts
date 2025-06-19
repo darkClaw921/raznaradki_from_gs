@@ -1,6 +1,15 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
-import { getTemplates, getTemplate, createSheetFromTemplate, syncLinkedSheetData } from '../controllers/sheetTemplateController';
+import { 
+  getTemplates, 
+  getTemplate, 
+  createSheetFromTemplate, 
+  syncLinkedSheetData,
+  updateReportDate,
+  getReportSources,
+  addReportSource,
+  removeReportSource
+} from '../controllers/sheetTemplateController';
 import { Sheet, UserSheet } from '../models';
 
 const router = Router();
@@ -60,61 +69,17 @@ router.post('/sync/:reportSheetId/:sourceSheetId', async (req, res) => {
   }
 });
 
-// Обновление даты отчета
-router.put('/update-report-date/:sheetId', authenticateToken, async (req, res) => {
-  try {
-    const { sheetId } = req.params;
-    const { reportDate } = req.body;
-    const userId = req.user.id;
+// Обновление даты отчета (заменено на функцию из контроллера)
+router.put('/update-report-date/:sheetId', updateReportDate);
 
-    if (!reportDate) {
-      return res.status(400).json({
-        error: 'Дата отчета обязательна'
-      });
-    }
+// Управление связями журналов с отчетами
+// GET /api/templates/report-sources/:sheetId - получение связанных журналов
+router.get('/report-sources/:sheetId', getReportSources);
 
-    // Получаем информацию о таблице
-    const sheet = await Sheet.findByPk(sheetId);
-    if (!sheet) {
-      return res.status(404).json({
-        error: 'Таблица не найдена'
-      });
-    }
+// POST /api/templates/report-sources/:sheetId - добавление связи с журналом
+router.post('/report-sources/:sheetId', addReportSource);
 
-    // Проверяем права доступа
-    const hasAccess = sheet.createdBy === userId || sheet.isPublic;
-    if (!hasAccess) {
-      const userSheet = await UserSheet.findOne({
-        where: { userId, sheetId }
-      });
-      if (!userSheet || !['write', 'admin'].includes(userSheet.permission)) {
-        return res.status(403).json({
-          error: 'Нет прав на редактирование таблицы'
-        });
-      }
-    }
-
-    // Обновляем дату отчета
-    await sheet.update({ reportDate });
-
-    // Если это связанная таблица, автоматически синхронизируем данные
-    if (sheet.sourceSheetId) {
-      await syncLinkedSheetData(sheet.id, sheet.sourceSheetId, reportDate);
-    }
-
-    res.json({
-      message: 'Дата отчета обновлена',
-      sheetId,
-      reportDate,
-      synchronized: !!sheet.sourceSheetId
-    });
-
-  } catch (error) {
-    console.error('Ошибка обновления даты отчета:', error);
-    res.status(500).json({
-      error: 'Ошибка сервера при обновлении даты отчета'
-    });
-  }
-});
+// DELETE /api/templates/report-sources/:sheetId/:sourceSheetId - удаление связи с журналом
+router.delete('/report-sources/:sheetId/:sourceSheetId', removeReportSource);
 
 export default router; 

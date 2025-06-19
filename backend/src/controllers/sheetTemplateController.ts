@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { SheetTemplate, Sheet, UserSheet, Cell } from '../models';
+import { SheetTemplate, Sheet, UserSheet, Cell, ReportSource } from '../models';
 
 // Получение списка всех шаблонов
 export const getTemplates = async (req: Request, res: Response) => {
@@ -62,7 +62,7 @@ export const createSheetFromTemplate = async (req: Request, res: Response) => {
   try {
     // templateId может быть в параметрах URL или в теле запроса
     const templateId = req.params.templateId || req.body.templateId;
-    const { name, description, sourceSheetId } = req.body;
+    const { name, description, sourceSheetId, sourceSheetIds } = req.body;
     const userId = req.user.id;
 
     console.log('🔧 Creating sheet from template:', { templateId, name, sourceSheetId });
@@ -158,9 +158,20 @@ export const createSheetFromTemplate = async (req: Request, res: Response) => {
       await Cell.bulkCreate(cellsToCreate);
     }
 
-    // Если это связанная таблица, синхронизируем данные
-    if (sourceSheetId) {
-      await syncLinkedSheetData(sheet.id, sourceSheetId);
+    // Создаем связи с журналами
+    const sourcesToLink = sourceSheetIds && Array.isArray(sourceSheetIds) ? sourceSheetIds : (sourceSheetId ? [sourceSheetId] : []);
+    
+    if (sourcesToLink.length > 0) {
+      // Создаем записи в таблице report_sources
+      const reportSources = sourcesToLink.map(sourceId => ({
+        reportSheetId: sheet.id,
+        sourceSheetId: sourceId
+      }));
+      
+      await ReportSource.bulkCreate(reportSources);
+      
+      // Синхронизируем данные со всеми связанными журналами
+      await syncLinkedSheetDataFromMultipleSources(sheet.id);
     }
 
     // Получаем созданную таблицу с дополнительными данными
@@ -187,7 +198,111 @@ export const createSheetFromTemplate = async (req: Request, res: Response) => {
   }
 };
 
-// Синхронизация данных связанной таблицы
+// Синхронизация данных связанной таблицы с несколькими источниками
+export const syncLinkedSheetDataFromMultipleSources = async (reportSheetId: number, targetDate?: string) => {
+  try {
+    // Получаем все связанные журналы для данного отчета
+    const reportSources = await ReportSource.findAll({
+      where: { reportSheetId },
+      include: [
+        {
+          model: Sheet,
+          as: 'sourceSheet',
+          attributes: ['id', 'name']
+        }
+      ]
+    });
+
+    if (reportSources.length === 0) {
+      console.log('📅 Нет связанных журналов для отчета', reportSheetId);
+      return true;
+    }
+
+    // Получаем информацию о таблице отчета
+    const reportSheet = await Sheet.findByPk(reportSheetId);
+    if (!reportSheet) {
+      throw new Error('Таблица отчета не найдена');
+    }
+
+    // Используем дату из параметра или из настроек таблицы отчета
+    const reportDate = targetDate || reportSheet.reportDate;
+    
+    if (!reportDate) {
+      console.log('📅 Дата отчета не указана, синхронизация отменена');
+      return true;
+    }
+
+    // Собираем данные из всех связанных журналов
+    let allFilteredData: any[] = [];
+    
+    for (const reportSource of reportSources) {
+      const sourceSheet = (reportSource as any).sourceSheet;
+      console.log(`📊 Синхронизация с журналом ${sourceSheet?.name || 'Неизвестно'} (ID: ${reportSource.sourceSheetId})`);
+      
+      // Получаем данные из конкретного журнала
+      const sourceCells = await Cell.findAll({
+        where: { sheetId: reportSource.sourceSheetId },
+        order: [['row', 'ASC'], ['column', 'ASC']]
+      });
+
+      // Фильтруем данные журнала по дате отчета с сохранением информации о источнике
+      const filteredData = filterJournalDataByReportDate(sourceCells, reportDate);
+      
+      // Добавляем информацию об источнике к каждой ячейке
+      const dataWithSource = filteredData.map(cell => ({
+        ...cell,
+        sourceSheetId: reportSource.sourceSheetId,
+        sourceSheetName: sourceSheet?.name
+      }));
+      
+      allFilteredData = allFilteredData.concat(dataWithSource);
+    }
+
+    // Преобразуем все данные в формат отчета
+    const reportCells = await transformJournalToReport(allFilteredData, reportSheetId, reportDate);
+
+    // Очищаем старые данные отчета (кроме заголовков - строки 0 и 1)
+    await Cell.destroy({
+      where: {
+        sheetId: reportSheetId,
+        row: { [require('sequelize').Op.gt]: 1 } // Удаляем все кроме строк заголовков
+      }
+    });
+
+    // Обновляем дату отчета в ячейке B1 (row=0, column=1)
+    const reportDateCell = await Cell.findOne({
+      where: { sheetId: reportSheetId, row: 0, column: 1 }
+    });
+
+    if (reportDateCell) {
+      await reportDateCell.update({ value: reportDate });
+    } else {
+      await Cell.create({
+        sheetId: reportSheetId,
+        row: 0,
+        column: 1,
+        value: reportDate,
+        format: { fontWeight: 'bold', fontSize: '16px', textAlign: 'center' }
+      });
+    }
+
+    // Создаем новые ячейки отчета
+    if (reportCells.length > 0) {
+      await Cell.bulkCreate(reportCells);
+    }
+
+    // Обновляем поле reportDate в модели Sheet
+    await reportSheet.update({ reportDate });
+
+    console.log(`✅ Синхронизация отчета ${reportSheetId} с ${reportSources.length} журналами на дату ${reportDate} завершена`);
+    return true;
+  } catch (error) {
+    console.error('Ошибка синхронизации связанной таблицы с несколькими источниками:', error);
+    throw error;
+  }
+};
+
+// Синхронизация данных связанной таблицы (старая функция для совместимости)
 export const syncLinkedSheetData = async (reportSheetId: number, sourceSheetId: number, targetDate?: string) => {
   try {
     // Получаем информацию о таблице отчета
@@ -304,7 +419,21 @@ const filterJournalDataByReportDate = (cells: any[], reportDate: string) => {
     // Включаем строку если дата заселения или выселения совпадает с датой отчета
     if (isoCheckin === isoReportDate || isoCheckout === isoReportDate) {
       console.log(`✅ Найдена подходящая запись для даты ${isoReportDate}`);
-      Object.values(row).forEach((cell: any) => filteredRows.push(cell));
+      // Сохраняем все ячейки строки с правильными индексами
+      Object.keys(row).forEach(colIndex => {
+        const cell = row[colIndex];
+        if (cell) {
+          console.log(`🔧 Копирование ячейки [${rowIndex},${colIndex}]: исходное value="${cell.value}"`);
+          const copiedCell = {
+            ...cell,
+            row: parseInt(rowIndex),
+            column: parseInt(colIndex),
+            value: cell.value // Явно сохраняем значение
+          };
+          console.log(`🔧 Скопированная ячейка: value="${copiedCell.value}"`);
+          filteredRows.push(copiedCell);
+        }
+      });
     }
   });
 
@@ -315,14 +444,20 @@ const filterJournalDataByReportDate = (cells: any[], reportDate: string) => {
 const transformJournalToReport = async (journalCells: any[], reportSheetId: number, reportDate: string) => {
   const reportCells: any[] = [];
   
-  // Группируем ячейки по строкам
+  console.log(`🔧 transformJournalToReport: получено ${journalCells.length} ячеек для обработки`);
+  
+  // Группируем ячейки по строкам с учетом источника (чтобы избежать перезаписи данных из разных журналов)
   const rowsData: any = {};
   journalCells.forEach(cell => {
-    if (!rowsData[cell.row]) {
-      rowsData[cell.row] = {};
+    // Создаем уникальный ключ: sourceSheetId:row для избежания конфликтов
+    const uniqueRowKey = `${cell.sourceSheetId}:${cell.row}`;
+    if (!rowsData[uniqueRowKey]) {
+      rowsData[uniqueRowKey] = {};
     }
-    rowsData[cell.row][cell.column] = cell;
+    rowsData[uniqueRowKey][cell.column] = cell;
   });
+  
+  console.log(`🔧 transformJournalToReport: сгруппировано в ${Object.keys(rowsData).length} строк`);
 
   // Функция преобразования даты
   const convertToISO = (dateStr: string) => {
@@ -341,35 +476,62 @@ const transformJournalToReport = async (journalCells: any[], reportSheetId: numb
     return '';
   };
 
-  // Сначала получаем название журнала (адрес) для отчета
-  const getJournalNameForAddress = async () => {
+  // Получаем все связанные журналы для определения адресов
+  const getJournalNamesForAddresses = async () => {
     try {
-      // Получаем исходный журнал для определения адреса
-      const reportSheet = await Sheet.findByPk(reportSheetId);
-      if (reportSheet?.sourceSheetId) {
-        const sourceSheet = await Sheet.findByPk(reportSheet.sourceSheetId);
-        if (sourceSheet?.name) {
-          // Извлекаем адрес из названия журнала (например "Журнал заселения DMD Cottage" -> "DMD Cottage")
-          const addressMatch = sourceSheet.name.match(/Журнал заселения (.+)/);
-          return addressMatch ? addressMatch[1] : sourceSheet.name;
-        }
+      const addressMap: { [key: string]: string } = {};
+      
+      // Получаем все связанные журналы для данного отчета
+      const reportSources = await ReportSource.findAll({
+        where: { reportSheetId },
+        include: [
+          {
+            model: Sheet,
+            as: 'sourceSheet',
+            attributes: ['id', 'name']
+          }
+        ]
+      });
+
+      for (const reportSource of reportSources) {
+                  const sourceSheet = (reportSource as any).sourceSheet;
+          if (sourceSheet?.name) {
+            // Используем полное название журнала как адрес таблицы-источника
+            addressMap[reportSource.sourceSheetId] = sourceSheet.name;
+          }
       }
-      return 'Не указан';
+
+      return addressMap;
     } catch (error) {
-      console.error('Ошибка получения названия журнала:', error);
-      return 'Не указан';
+      console.error('Ошибка получения названий журналов:', error);
+      return {};
     }
   };
 
-  // Получаем адрес синхронно в контексте этой функции
-  const address = await getJournalNameForAddress();
+  // Получаем карту соответствия ID журнала -> адрес
+  const journalAddressMap = await getJournalNamesForAddresses();
 
-  // Группируем данные по адресам для объединения выселения и заселения
+  // Группируем данные по уникальной комбинации: название журнала + ФИО гостя
+  // Это позволит отображать отдельные строки для записей из разных журналов
   const addressGroups: any = {};
 
   // Собираем все релевантные записи
-  Object.keys(rowsData).forEach(rowIndex => {
-    const row = rowsData[rowIndex];
+  Object.keys(rowsData).forEach(uniqueRowKey => {
+    const row = rowsData[uniqueRowKey];
+    
+    console.log(`🔧 Анализ строки ${uniqueRowKey}:`);
+    console.log(`🔧   - Количество ячеек в строке: ${Object.keys(row).length}`);
+    Object.keys(row).slice(0, 2).forEach(colIndex => {
+      const cell = row[colIndex];
+      console.log(`🔧   - Ячейка [${uniqueRowKey},${colIndex}]: value="${cell?.value}", sourceSheetId=${cell?.sourceSheetId}, sourceSheetName="${cell?.sourceSheetName}"`);
+    });
+    
+    // Определяем ID журнала для этой строки из сохраненной информации об источнике
+    const sourceSheetId = row[0]?.sourceSheetId || row[1]?.sourceSheetId; // Берем sourceSheetId из любой ячейки строки
+    const sourceSheetName = row[0]?.sourceSheetName || row[1]?.sourceSheetName; // Берем название из сохраненной информации
+    const tableName = sourceSheetName || journalAddressMap[sourceSheetId] || 'Не указан';
+    
+    console.log(`🔧 Результат: sourceSheetId=${sourceSheetId}, sourceSheetName="${sourceSheetName}", tableName="${tableName}"`);
     
     // Извлекаем данные из журнала согласно его структуре
     const month = row[0]?.value || ''; // Месяц
@@ -389,10 +551,15 @@ const transformJournalToReport = async (journalCells: any[], reportSheetId: numb
     const isCheckin = convertToISO(checkinDate) === reportDate;
 
     if (isCheckout || isCheckin) {
-      // Используем динамический адрес из названия журнала
-      if (!addressGroups[address]) {
-        addressGroups[address] = {
-          address,
+      // Создаем уникальный ключ для группировки: ID источника + название таблицы + ФИО
+      // Это позволит отображать записи из разных журналов отдельно
+      const uniqueKey = `${sourceSheetId}:${tableName}:${guestName}`;
+      
+      console.log(`🔍 Обработка записи: источник="${tableName}" (ID: ${sourceSheetId}), гость="${guestName}", заселение="${isCheckin}", выселение="${isCheckout}"`);
+      
+      if (!addressGroups[uniqueKey]) {
+        addressGroups[uniqueKey] = {
+          address: tableName, // Теперь адрес = название таблицы
           houseStatus: '',
           checkout: null,
           checkin: null
@@ -400,7 +567,7 @@ const transformJournalToReport = async (journalCells: any[], reportSheetId: numb
       }
 
       if (isCheckout) {
-        addressGroups[address].checkout = {
+        addressGroups[uniqueKey].checkout = {
           guestName,
           phone,
           comment
@@ -408,7 +575,7 @@ const transformJournalToReport = async (journalCells: any[], reportSheetId: numb
       }
 
       if (isCheckin) {
-        addressGroups[address].checkin = {
+        addressGroups[uniqueKey].checkin = {
           guestName,
           phone,
           checkoutDate,
@@ -421,12 +588,12 @@ const transformJournalToReport = async (journalCells: any[], reportSheetId: numb
       }
 
       // Определяем статус дома на основе наличия операций
-      if (addressGroups[address].checkout && addressGroups[address].checkin) {
-        addressGroups[address].houseStatus = 'Выс/Зас'; // И выселение и заселение
-      } else if (addressGroups[address].checkout) {
-        addressGroups[address].houseStatus = 'Выселение';
-      } else if (addressGroups[address].checkin) {
-        addressGroups[address].houseStatus = 'Заселение';
+      if (addressGroups[uniqueKey].checkout && addressGroups[uniqueKey].checkin) {
+        addressGroups[uniqueKey].houseStatus = 'Выс/Зас'; // И выселение и заселение
+      } else if (addressGroups[uniqueKey].checkout) {
+        addressGroups[uniqueKey].houseStatus = 'Выселение';
+      } else if (addressGroups[uniqueKey].checkin) {
+        addressGroups[uniqueKey].houseStatus = 'Заселение';
       }
     }
   });
@@ -577,19 +744,168 @@ const transformJournalToReport = async (journalCells: any[], reportSheetId: numb
 // Обновление связанных отчетов при изменении журнала
 export const updateLinkedReports = async (sourceSheetId: number) => {
   try {
-    // Находим все отчеты, связанные с данным журналом
-    const linkedReports = await Sheet.findAll({
+    // Находим все отчеты, связанные с данным журналом через report_sources
+    const reportSources = await ReportSource.findAll({
       where: { sourceSheetId: sourceSheetId }
     });
 
     // Синхронизируем каждый отчет
+    for (const reportSource of reportSources) {
+      await syncLinkedSheetDataFromMultipleSources(reportSource.reportSheetId);
+    }
+
+    // Также обрабатываем старые связи через sourceSheetId (для совместимости)
+    const linkedReports = await Sheet.findAll({
+      where: { sourceSheetId: sourceSheetId }
+    });
+
     for (const report of linkedReports) {
       await syncLinkedSheetData(report.id, sourceSheetId);
     }
 
-    return linkedReports.length;
+    return reportSources.length + linkedReports.length;
   } catch (error) {
     console.error('Ошибка обновления связанных отчетов:', error);
     throw error;
+  }
+};
+
+// Обновление даты отчета
+export const updateReportDate = async (req: Request, res: Response) => {
+  try {
+    const { sheetId } = req.params;
+    const { reportDate } = req.body;
+
+    console.log('📋 Template route: PUT /update-report-date/' + sheetId);
+    console.log('📋 Headers:', req.headers.authorization ? 'Authorization present' : 'No authorization');
+    console.log('📋 Body:', req.body);
+
+    // Находим таблицу отчета
+    const reportSheet = await Sheet.findByPk(sheetId);
+    if (!reportSheet) {
+      return res.status(404).json({
+        error: 'Таблица отчета не найдена'
+      });
+    }
+
+    // Обновляем дату отчета
+    await reportSheet.update({ reportDate });
+
+    // Синхронизируем данные с новой датой - используем новую функцию для множественных источников
+    await syncLinkedSheetDataFromMultipleSources(parseInt(sheetId), reportDate);
+
+    res.json({
+      message: 'Дата отчета успешно обновлена',
+      reportDate
+    });
+
+  } catch (error) {
+    console.error('Ошибка обновления даты отчета:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера при обновлении даты отчета'
+    });
+  }
+};
+
+// Получение связанных журналов для отчета
+export const getReportSources = async (req: Request, res: Response) => {
+  try {
+    const { sheetId } = req.params;
+
+    const reportSources = await ReportSource.findAll({
+      where: { reportSheetId: sheetId },
+      include: [
+        {
+          model: Sheet,
+          as: 'sourceSheet',
+          attributes: ['id', 'name', 'description']
+        }
+      ]
+    });
+
+    res.json({
+      message: 'Связанные журналы успешно получены',
+      sources: reportSources
+    });
+
+  } catch (error) {
+    console.error('Ошибка получения связанных журналов:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера при получении связанных журналов'
+    });
+  }
+};
+
+// Добавление связи журнала с отчетом
+export const addReportSource = async (req: Request, res: Response) => {
+  try {
+    const { sheetId } = req.params;
+    const { sourceSheetId } = req.body;
+
+    // Проверяем что таблицы существуют
+    const reportSheet = await Sheet.findByPk(sheetId);
+    const sourceSheet = await Sheet.findByPk(sourceSheetId);
+
+    if (!reportSheet || !sourceSheet) {
+      return res.status(404).json({
+        error: 'Одна из таблиц не найдена'
+      });
+    }
+
+    // Создаем связь (если не существует)
+    const [reportSource, created] = await ReportSource.findOrCreate({
+      where: { reportSheetId: parseInt(sheetId), sourceSheetId: parseInt(sourceSheetId) },
+      defaults: { reportSheetId: parseInt(sheetId), sourceSheetId: parseInt(sourceSheetId) }
+    });
+
+    if (!created) {
+      return res.status(400).json({
+        error: 'Связь уже существует'
+      });
+    }
+
+    // Синхронизируем данные
+    await syncLinkedSheetDataFromMultipleSources(parseInt(sheetId));
+
+    res.status(201).json({
+      message: 'Журнал успешно добавлен к отчету',
+      reportSource
+    });
+
+  } catch (error) {
+    console.error('Ошибка добавления журнала к отчету:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера при добавлении журнала к отчету'
+    });
+  }
+};
+
+// Удаление связи журнала с отчетом
+export const removeReportSource = async (req: Request, res: Response) => {
+  try {
+    const { sheetId, sourceSheetId } = req.params;
+
+    const deletedCount = await ReportSource.destroy({
+      where: { reportSheetId: parseInt(sheetId), sourceSheetId: parseInt(sourceSheetId) }
+    });
+
+    if (deletedCount === 0) {
+      return res.status(404).json({
+        error: 'Связь не найдена'
+      });
+    }
+
+    // Синхронизируем данные после удаления связи
+    await syncLinkedSheetDataFromMultipleSources(parseInt(sheetId));
+
+    res.json({
+      message: 'Журнал успешно отвязан от отчета'
+    });
+
+  } catch (error) {
+    console.error('Ошибка удаления связи журнала с отчетом:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера при удалении связи журнала с отчетом'
+    });
   }
 }; 

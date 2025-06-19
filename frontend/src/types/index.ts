@@ -218,4 +218,14 @@ export interface TemplateCell {
 export interface CreateSheetFromTemplateRequest {
   name: string;
   description?: string;
+  sourceSheetIds?: number[]; // Массив ID журналов для связи с отчетом
+}
+
+export interface ReportSource {
+  id: number;
+  reportSheetId: number;
+  sourceSheetId: number;
+  createdAt: string;
+  updatedAt: string;
+  sourceSheet?: Sheet;
 } 

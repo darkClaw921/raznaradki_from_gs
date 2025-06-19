@@ -8,6 +8,7 @@ import { UserSheetFactory } from './UserSheet';
 import { RolePermissionFactory } from './RolePermission';
 import { CellHistoryFactory } from './CellHistory';
 import { SheetTemplateFactory } from './SheetTemplate';
+import { ReportSource } from './ReportSource';
 
 // Инициализация Sequelize
 const sequelize = new Sequelize({
@@ -36,6 +37,7 @@ const UserSheetModel = UserSheetFactory(sequelize);
 const RolePermissionModel = RolePermissionFactory(sequelize);
 const CellHistoryModel = CellHistoryFactory(sequelize);
 const SheetTemplateModel = SheetTemplateFactory(sequelize);
+const ReportSourceModel = ReportSource.initModel(sequelize);
 
 // Определение ассоциаций
 const setupAssociations = () => {
@@ -106,6 +108,26 @@ const setupAssociations = () => {
   // Sheet - Sheet (самосвязь для источника данных)
   SheetModel.belongsTo(SheetModel, { foreignKey: 'sourceSheetId', as: 'sourceSheet' });
   SheetModel.hasMany(SheetModel, { foreignKey: 'sourceSheetId', as: 'dependentSheets' });
+
+  // ReportSource ассоциации (многие ко многим между отчетами и журналами)
+  SheetModel.belongsToMany(SheetModel, {
+    through: ReportSourceModel,
+    foreignKey: 'reportSheetId',
+    otherKey: 'sourceSheetId',
+    as: 'linkedSources'
+  });
+  SheetModel.belongsToMany(SheetModel, {
+    through: ReportSourceModel,
+    foreignKey: 'sourceSheetId',
+    otherKey: 'reportSheetId',
+    as: 'linkedReports'
+  });
+  
+  // Прямые ассоциации для ReportSource
+  ReportSourceModel.belongsTo(SheetModel, { foreignKey: 'reportSheetId', as: 'reportSheet' });
+  ReportSourceModel.belongsTo(SheetModel, { foreignKey: 'sourceSheetId', as: 'sourceSheet' });
+  SheetModel.hasMany(ReportSourceModel, { foreignKey: 'reportSheetId', as: 'reportSources' });
+  SheetModel.hasMany(ReportSourceModel, { foreignKey: 'sourceSheetId', as: 'sourceReports' });
 };
 
 setupAssociations();
@@ -120,5 +142,6 @@ export {
   UserSheetModel as UserSheet,
   RolePermissionModel as RolePermission,
   CellHistoryModel as CellHistory,
-  SheetTemplateModel as SheetTemplate
+  SheetTemplateModel as SheetTemplate,
+  ReportSourceModel as ReportSource
 }; 

@@ -179,7 +179,8 @@ export const templatesApi = {
     templateId: number;
     name: string;
     description?: string;
-    sourceSheetId?: number; // ID исходной таблицы для связи
+    sourceSheetId?: number; // ID исходной таблицы для связи (устаревшее)
+    sourceSheetIds?: number[]; // Массив ID журналов для связи
   }): Promise<{ message: string; sheet: Sheet }> => {
     const response = await api.post('/templates/create', data);
     return response.data;
@@ -194,6 +195,22 @@ export const templatesApi = {
   // Обновление даты отчета
   updateReportDate: async (sheetId: number, reportDate: string): Promise<{ message: string; synchronized: boolean }> => {
     const response = await api.put(`/templates/update-report-date/${sheetId}`, { reportDate });
+    return response.data;
+  },
+
+  // Управление связями журналов с отчетами
+  getReportSources: async (sheetId: number): Promise<{ sources: any[] }> => {
+    const response = await api.get(`/templates/report-sources/${sheetId}`);
+    return response.data;
+  },
+  
+  addReportSource: async (sheetId: number, sourceSheetId: number): Promise<{ message: string }> => {
+    const response = await api.post(`/templates/report-sources/${sheetId}`, { sourceSheetId });
+    return response.data;
+  },
+  
+  removeReportSource: async (sheetId: number, sourceSheetId: number): Promise<{ message: string }> => {
+    const response = await api.delete(`/templates/report-sources/${sheetId}/${sourceSheetId}`);
     return response.data;
   }
 };
