@@ -116,33 +116,68 @@ export const processWebhook = async (req: Request, res: Response) => {
 // Извлечение данных бронирования из webhook
 function extractBookingData(webhookData: any) {
   try {
-    if (!webhookData.data?.booking) {
+    console.log('🔍 Анализ структуры webhookData:', {
+      isArray: Array.isArray(webhookData),
+      length: Array.isArray(webhookData) ? webhookData.length : 'не массив',
+      hasData: webhookData?.data ? 'есть data' : 'нет data',
+      firstElement: Array.isArray(webhookData) && webhookData.length > 0 ? 'есть первый элемент' : 'нет первого элемента'
+    });
+
+    let bookingSource;
+    
+    // Проверяем, приходят ли данные в виде массива (как в логах)
+    if (Array.isArray(webhookData) && webhookData.length > 0) {
+      // Данные в формате массива - берем первый элемент и его body
+      const firstElement = webhookData[0];
+      if (firstElement?.body?.data?.booking) {
+        bookingSource = firstElement.body.data.booking;
+        console.log('✅ Найдены данные бронирования в массиве: webhookData[0].body.data.booking');
+      }
+    } else if (webhookData?.data?.booking) {
+      // Данные в прямом формате объекта
+      bookingSource = webhookData.data.booking;
+      console.log('✅ Найдены данные бронирования в объекте: webhookData.data.booking');
+    }
+
+    if (!bookingSource) {
+      console.log('❌ Данные бронирования не найдены в webhook');
       return null;
     }
 
-    const booking = webhookData.data.booking;
+    console.log('📋 Извлеченные поля бронирования:', {
+      apartment_title: bookingSource.apartment?.title,
+      begin_date: bookingSource.begin_date,
+      end_date: bookingSource.end_date,
+      client_fio: bookingSource.client?.fio,
+      client_phone: bookingSource.client?.phone,
+      amount: bookingSource.amount,
+      source: bookingSource.source
+    });
     
     // Вычисляем количество дней
-    const beginDate = new Date(booking.begin_date);
-    const endDate = new Date(booking.end_date);
+    const beginDate = new Date(bookingSource.begin_date);
+    const endDate = new Date(bookingSource.end_date);
     const daysDiff = Math.ceil((endDate.getTime() - beginDate.getTime()) / (1000 * 60 * 60 * 24));
 
-    return {
-      apartmentTitle: booking.apartment?.title || '',
-      beginDate: booking.begin_date,
-      endDate: booking.end_date,
+    const extractedData = {
+      apartmentTitle: bookingSource.apartment?.title || '',
+      beginDate: bookingSource.begin_date,
+      endDate: bookingSource.end_date,
       daysCount: daysDiff,
-      guestName: booking.client?.fio || '',
-      phone: booking.client?.phone || '',
-      totalAmount: booking.amount || 0,
-      prepayment: booking.prepayment || 0,
-      pricePerDay: booking.price_per_day || 0,
-      statusCode: booking.status_cd || 0,
-      source: booking.source || '',
-      notes: booking.notes || ''
+      guestName: bookingSource.client?.fio || '',
+      phone: bookingSource.client?.phone || '',
+      totalAmount: bookingSource.amount || 0,
+      prepayment: bookingSource.prepayment || 0,
+      pricePerDay: bookingSource.price_per_day || 0,
+      statusCode: bookingSource.status_cd || 0,
+      source: bookingSource.source || '',
+      notes: bookingSource.notes || ''
     };
+
+    console.log('✅ Успешно извлечены данные для обработки:', extractedData);
+    return extractedData;
   } catch (error) {
-    console.error('Ошибка при извлечении данных бронирования:', error);
+    console.error('❌ Ошибка при извлечении данных бронирования:', error);
     return null;
   }
 }
