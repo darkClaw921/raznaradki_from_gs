@@ -36,7 +36,9 @@ const allowedOrigins = [
   process.env.FRONTEND_URL || "http://localhost",
   "http://localhost:3000",
   "http://localhost",
-  // Поддержка продакшен доменов
+  // Production домен
+  "https://dmd-cottage.alteran-industries.ru",
+  // Legacy поддержка локальных доменов
   /^https?:\/\/.*\.orb\.local(:\d+)?$/,
   /^https:\/\/nginx\.raznaradki-from-gs\.orb\.local$/
 ];

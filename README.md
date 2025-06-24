@@ -1,47 +1,6 @@
 # DMD Cottage Sheets
 
-## 🔧 Быстрое решение проблем WebSocket/API
-
-Если вы видите ошибки типа:
-- `WebSocket connection to 'wss://nginx.raznaradki-from-gs.orb.local:3000/ws' failed`
-- `[blocked] The page at https://... requested insecure content from http://localhost/api/...`
-- `XMLHttpRequest cannot load http://localhost/api/... due to access control checks`
-
-### Решение:
-
-1. **Пересоберите и перезапустите контейнеры**:
-   ```bash
-   docker-compose down
-   docker-compose up -d --build
-   ```
-
-2. **Если проблемы с HTTPS, создайте SSL сертификаты**:
-   ```bash
-   # Создать папку для сертификатов
-   mkdir -p nginx/ssl
-   
-   # Создать самоподписанный сертификат (для тестирования)
-   openssl req -x509 -newkey rsa:4096 -keyout nginx/ssl/key.pem -out nginx/ssl/cert.pem -days 365 -nodes -subj "/C=RU/ST=Moscow/L=Moscow/O=DMD/CN=nginx.raznaradki-from-gs.orb.local"
-   ```
-
-3. **Обновите .env файл**:
-   ```bash
-   cp env.example .env
-   # Отредактируйте .env если нужно
-   ```
-
-4. **Перезапустите с новой конфигурацией**:
-   ```bash
-   docker-compose up -d --build
-   ```
-
-### Что исправлено:
-- ✅ API и WebSocket теперь используют относительные URL в продакшене
-- ✅ CORS настроен для поддержки orb.local доменов
-- ✅ nginx правильно проксирует WebSocket через HTTPS
-- ✅ Добавлены security headers
-
----
+**Production URL**: https://dmd-cottage.alteran-industries.ru
 
 Веб-сервис для совместной работы с таблицами, аналог Google Sheets для компании DMD cottage.
 
@@ -60,39 +19,58 @@
 - Docker и Docker Compose
 - Node.js 18+ (для разработки)
 
+### Production развертывание
+
+### Требования на сервере
+- Docker и Docker Compose
+- Nginx (для reverse proxy)
+- SSL сертификаты (Let's Encrypt)
+
 ### Установка
 
-1. Клонируйте репозиторий
-2. Скопируйте `.env.example` в `.env` и настройте переменные
-3. Запустите сервисы:
+1. Клонируйте репозиторий на сервер
+2. Скопируйте `.env.example` в `.env` и настройте переменные для production:
+   ```bash
+   cp env.example .env
+   # Отредактируйте .env с production настройками
+   ```
 
-```bash
-docker-compose up -d
-```
+3. Настройте nginx на сервере для проксирования (см. nginx-server-config.txt)
 
-4. Откройте http://localhost в браузере
+4. Запустите сервисы:
+   ```bash
+   docker-compose up -d
+   ```
 
-### Переменные окружения
+5. Сервис доступен по адресу: https://dmd-cottage.alteran-industries.ru
+
+### Переменные окружения для production
 
 ```env
-# База данных
-DB_HOST=localhost
-DB_PORT=3306
-DB_NAME=dmd_cottage_sheets
-DB_USER=dmd_user
-DB_PASSWORD=your_secure_password
-DB_ROOT_PASSWORD=your_root_password
+# MySQL база данных
+MYSQL_ROOT_PASSWORD=your_secure_root_password_here
+MYSQL_DATABASE=dmd_cottage_sheets
+MYSQL_USER=dmduser
+MYSQL_PASSWORD=your_secure_password_here
 
 # JWT
-JWT_SECRET=your_super_secret_jwt_key_here
+JWT_SECRET=your-super-secret-jwt-key-change-in-production-256-bit-random-string
 JWT_EXPIRES_IN=7d
 
-# Server
+# Окружение
+NODE_ENV=production
 PORT=3001
-NODE_ENV=development
 
-# Frontend
-REACT_APP_API_URL=http://localhost:3001
+# Production URLs
+FRONTEND_URL=https://dmd-cottage.alteran-industries.ru
+REACT_APP_API_URL=https://dmd-cottage.alteran-industries.ru/api
+REACT_APP_WS_URL=wss://dmd-cottage.alteran-industries.ru
+
+# Администратор (создается автоматически)
+ADMIN_EMAIL=admin@dmdcottage.com
+ADMIN_PASSWORD=admin123456
+ADMIN_FIRST_NAME=Администратор
+ADMIN_LAST_NAME=Системы
 ```
 
 ## Архитектура

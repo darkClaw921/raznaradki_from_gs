@@ -2,7 +2,7 @@
 
 ## Обзор проекта
 Веб-сервис для совместной работы с таблицами, аналог Google Sheets для компании DMD cottage.
-Сервис запускается через docker compose.
+Сервис работает в production на сервере с внешним nginx по адресу: **https://dmd-cottage.alteran-industries.ru**
 
 ## Структура проекта
 - `backend/` - Серверная часть на Node.js + TypeScript + Express + Sequelize
@@ -112,9 +112,10 @@
 - Axios для HTTP запросов
 
 ### DevOps
-- Docker + Docker Compose
+- Docker + Docker Compose (без nginx)
 - MySQL 8.0
-- Nginx для reverse proxy
+- Внешний nginx для reverse proxy (на сервере)
+- Production домен: https://dmd-cottage.alteran-industries.ru
 
 ## Основные функции
 
@@ -282,29 +283,54 @@
 
 ## Запуск проекта
 
-### Быстрый запуск через Docker Compose
+### Production развертывание
 
-1. **Автоматический запуск**:
+**Адрес сервиса**: https://dmd-cottage.alteran-industries.ru
+
+1. **Настройка .env файла**:
    ```bash
-   ./start.sh
+   cp env.example .env
+   # Отредактируйте .env с production настройками
    ```
 
-2. **Ручной запуск**:
+2. **Запуск сервисов через Docker Compose**:
    ```bash
-   # Создать .env файл (если нет)
-   cp env.example .env
-   
-   # Настроить данные администратора в .env (опционально)
-   # ADMIN_EMAIL=admin@dmdcottage.com
-   # ADMIN_PASSWORD=admin123456
-   # ADMIN_FIRST_NAME=Администратор
-   # ADMIN_LAST_NAME=Системы
-   
-   # Запустить все сервисы
    docker-compose up -d
-   
-   # Проверить статус
-   docker-compose ps
+   ```
+
+3. **Настройка nginx на сервере** (требуется для проксирования):
+   ```nginx
+   # /etc/nginx/sites-available/dmd-cottage
+   server {
+       server_name dmd-cottage.alteran-industries.ru;
+       
+       # Frontend
+       location / {
+           proxy_pass http://127.0.0.1:3000;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+       }
+       
+       # API
+       location /api/ {
+           proxy_pass http://127.0.0.1:3001;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+       }
+       
+       # WebSocket
+       location /socket.io/ {
+           proxy_pass http://127.0.0.1:3001;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection "upgrade";
+           proxy_set_header Host $host;
+       }
+   }
    ```
 
 3. **Адреса сервисов**:
@@ -436,8 +462,11 @@ const isInClipboardRange = useCallback((row, column) => { ... }, [clipboard]);
 - Health checks
 - **ОБНОВЛЕНО**: Сборка с оптимизациями производительности
 
-## СТАТУС ПРОЕКТА: ✅ ПОЛНОСТЬЮ ФУНКЦИОНАЛЕН V3
+## СТАТУС ПРОЕКТА: ✅ ПОЛНОСТЬЮ ФУНКЦИОНАЛЕН V3 - PRODUCTION READY
 - Все критические баги исправлены
 - Массовые операции оптимизированы (до 1000 строк)
 - Производительность выделения ячеек оптимизирована
 - Система готова к работе с большими объемами данных
+- **✅ PRODUCTION РАЗВЕРТЫВАНИЕ: Сервис работает на https://dmd-cottage.alteran-industries.ru**
+- **✅ ВНЕШНИЙ NGINX: Docker Compose настроен для работы с внешним nginx**
+- **✅ SSL СЕРТИФИКАТЫ: Let's Encrypt настроены на сервере**
