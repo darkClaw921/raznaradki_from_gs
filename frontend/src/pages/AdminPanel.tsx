@@ -16,12 +16,14 @@ import {
   Groups,
   Security,
   TableChart,
-  ArrowBack
+  ArrowBack,
+  Webhook
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import UserManagement from '../components/Admin/UserManagement';
 import GroupManagement from '../components/Admin/GroupManagement';
 import AccessControl from '../components/Admin/AccessControl';
+import { WebhookSettings } from '../components/Admin/WebhookSettings';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 
@@ -126,6 +128,12 @@ const AdminPanel: React.FC = () => {
                 {...a11yProps(3)} 
                 iconPosition="start"
               />
+              <Tab 
+                icon={<Webhook />} 
+                label="Webhook" 
+                {...a11yProps(4)} 
+                iconPosition="start"
+              />
             </Tabs>
           </Box>
           
@@ -155,6 +163,10 @@ const AdminPanel: React.FC = () => {
             >
               Перейти к таблицам
             </Button>
+          </TabPanel>
+
+          <TabPanel value={value} index={4}>
+            <WebhookSettings />
           </TabPanel>
         </Paper>
       </Container>

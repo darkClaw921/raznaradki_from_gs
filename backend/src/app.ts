@@ -14,9 +14,12 @@ import sheetRoutes from './routes/sheetRoutes';
 import cellRoutes from './routes/cellRoutes';
 import groupRoutes from './routes/groupRoutes';
 import sheetTemplateRoutes from './routes/sheetTemplateRoutes';
+import systemRoutes from './routes/systemRoutes';
+import webhookRoutes from './routes/webhookRoutes';
 import { initializeSocketHandlers } from './websocket/socketHandlers';
 import { authenticateToken } from './middleware/auth';
 import { initializeAdmin } from './utils/initAdmin';
+import { runMigrations } from './utils/migrations';
 
 // Загружаем переменные окружения
 dotenv.config();
@@ -87,6 +90,8 @@ app.use('/api/sheets', authenticateToken, sheetRoutes);
 app.use('/api/cells', authenticateToken, cellRoutes);
 console.log('📋 Подключаем маршруты templates...', typeof sheetTemplateRoutes);
 app.use('/api/templates', sheetTemplateRoutes);
+app.use('/api/system', systemRoutes);
+app.use('/api/webhook', webhookRoutes);
 console.log('✅ Все маршруты подключены');
 
 // Инициализация WebSocket обработчиков
@@ -115,7 +120,12 @@ sequelize.authenticate()
     return sequelize.sync();
   })
   .then(() => {
-    // Инициализируем администратора после синхронизации БД
+    // Выполняем миграции автоматически при запуске
+    console.log('🔄 Запуск автоматических миграций...');
+    return runMigrations();
+  })
+  .then(() => {
+    // Инициализируем администратора после синхронизации БД и миграций
     return initializeAdmin();
   })
   .then(() => {

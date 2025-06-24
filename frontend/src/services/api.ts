@@ -229,4 +229,27 @@ export const templatesApi = {
   }
 };
 
+// System API
+export const systemApi = {
+  getSettings: () => api.get('/system/settings'),
+  
+  updateSetting: (key: string, value: string) => 
+    api.put('/system/settings', { key, value }),
+  
+  generateWebhookUrl: () => api.post('/system/webhook/generate'),
+  
+  toggleWebhook: (enabled: boolean) => 
+    api.put('/system/webhook/toggle', { enabled }),
+};
+
+// Webhook API
+export const webhookApi = {
+  getMapping: (sheetId: string) => api.get(`/webhook/mapping/${sheetId}`),
+  
+  updateMapping: (sheetId: string, data: {
+    apartmentTitles: string[];
+    isActive: boolean;
+  }) => api.put(`/webhook/mapping/${sheetId}`, data),
+};
+
 export default api; 

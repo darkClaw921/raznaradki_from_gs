@@ -9,6 +9,8 @@ import { RolePermissionFactory } from './RolePermission';
 import { CellHistoryFactory } from './CellHistory';
 import { SheetTemplateFactory } from './SheetTemplate';
 import { ReportSource } from './ReportSource';
+import { SystemSettingsFactory } from './SystemSettings';
+import { WebhookMappingFactory } from './WebhookMapping';
 
 // Инициализация Sequelize
 const sequelize = new Sequelize({
@@ -38,6 +40,8 @@ const RolePermissionModel = RolePermissionFactory(sequelize);
 const CellHistoryModel = CellHistoryFactory(sequelize);
 const SheetTemplateModel = SheetTemplateFactory(sequelize);
 const ReportSourceModel = ReportSource.initModel(sequelize);
+const SystemSettingsModel = SystemSettingsFactory(sequelize);
+const WebhookMappingModel = WebhookMappingFactory(sequelize);
 
 // Определение ассоциаций
 const setupAssociations = () => {
@@ -128,6 +132,10 @@ const setupAssociations = () => {
   ReportSourceModel.belongsTo(SheetModel, { foreignKey: 'sourceSheetId', as: 'sourceSheet' });
   SheetModel.hasMany(ReportSourceModel, { foreignKey: 'reportSheetId', as: 'reportSources' });
   SheetModel.hasMany(ReportSourceModel, { foreignKey: 'sourceSheetId', as: 'sourceReports' });
+
+  // WebhookMapping associations  
+  SheetModel.hasOne(WebhookMappingModel, { foreignKey: 'sheetId', as: 'webhookMapping' });
+  WebhookMappingModel.belongsTo(SheetModel, { foreignKey: 'sheetId', as: 'sheet' });
 };
 
 setupAssociations();
@@ -143,5 +151,7 @@ export {
   RolePermissionModel as RolePermission,
   CellHistoryModel as CellHistory,
   SheetTemplateModel as SheetTemplate,
-  ReportSourceModel as ReportSource
+  ReportSourceModel as ReportSource,
+  SystemSettingsModel as SystemSettings,
+  WebhookMappingModel as WebhookMapping,
 }; 

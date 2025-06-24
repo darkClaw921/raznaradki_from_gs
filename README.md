@@ -82,16 +82,13 @@ ADMIN_LAST_NAME=Системы
 
 ### Backend
 ```bash
-cd backend
-npm install
-npm run dev
+docker-compose up -d --build backend
+
 ```
 
 ### Frontend
 ```bash
-cd frontend
-npm install
-npm start
+docker-compose up -d --build frontend
 ```
 
 ## API

@@ -17,12 +17,14 @@ import {
   Share,
   People,
   CalendarToday,
+  Webhook,
 } from '@mui/icons-material';
 import { AppDispatch, RootState } from '../store';
 import { setCurrentSheet, setLoading } from '../store/sheetSlice';
 import { sheetsApi, templatesApi } from '../services/api';
 import Spreadsheet from '../components/Spreadsheet/Spreadsheet';
 import MembersDialog from '../components/Spreadsheet/MembersDialog';
+import { WebhookConfigDialog } from '../components/Spreadsheet/WebhookConfigDialog';
 
 const Sheet: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -33,6 +35,7 @@ const Sheet: React.FC = () => {
 
   const [userPermissions, setUserPermissions] = useState<string>('read');
   const [membersDialogOpen, setMembersDialogOpen] = useState(false);
+  const [webhookDialogOpen, setWebhookDialogOpen] = useState(false);
   const [reportDate, setReportDate] = useState<string>('');
   const [isUpdatingDate, setIsUpdatingDate] = useState(false);
   const [linkedJournals, setLinkedJournals] = useState<any[]>([]);
@@ -192,6 +195,18 @@ const Sheet: React.FC = () => {
               Участники
             </Button>
 
+            {/* Кнопка webhook - только для таблиц "Журнал заселения" и админов */}
+            {canManageAccess && currentSheet.template?.name?.includes('Журнал заселения') && (
+              <Button
+                startIcon={<Webhook />}
+                variant="outlined"
+                size="small"
+                onClick={() => setWebhookDialogOpen(true)}
+              >
+                Webhook
+              </Button>
+            )}
+
             {/* Кнопка поделиться - только для администраторов */}
             {canManageAccess && (
               <Button
@@ -224,6 +239,14 @@ const Sheet: React.FC = () => {
         onClose={() => setMembersDialogOpen(false)}
         sheetId={id || ''}
         userPermissions={userPermissions}
+      />
+
+      {/* Диалог настройки webhook */}
+      <WebhookConfigDialog
+        open={webhookDialogOpen}
+        onClose={() => setWebhookDialogOpen(false)}
+        sheetId={id || ''}
+        sheetTitle={currentSheet.name}
       />
     </Box>
   );
