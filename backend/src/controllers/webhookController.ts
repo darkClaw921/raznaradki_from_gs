@@ -233,14 +233,25 @@ function formatDate(dateString: string): string {
 // Добавление данных бронирования в таблицу
 async function addBookingToSheet(sheet: any, bookingData: any) {
   try {
-    // Находим следующую свободную строку
+    // Находим последнюю заполненную строку
     const existingCells = await Cell.findAll({
-      where: { sheetId: sheet.id },
-      order: [['row', 'DESC']]
+      where: { 
+        sheetId: sheet.id,
+        value: { [require('sequelize').Op.ne]: '' } // Исключаем пустые ячейки
+      },
+      order: [['row', 'DESC']],
+      limit: 1
     });
 
-    const lastRow = existingCells.length > 0 ? existingCells[0].row : 0;
-    const newRow = lastRow + 1;
+    // Определяем номер новой строки
+    const lastFilledRow = existingCells.length > 0 ? existingCells[0].row : 0;
+    const newRow = lastFilledRow + 1;
+
+    console.log(`🔍 Анализ строк в таблице ${sheet.title}:`, {
+      последняя_заполненная_строка: lastFilledRow,
+      новая_строка: newRow,
+      количество_заполненных_ячеек: existingCells.length
+    });
 
     // Форматируем месяц и год из даты заселения
     const monthYear = formatMonthYear(bookingData.beginDate);
@@ -266,6 +277,7 @@ async function addBookingToSheet(sheet: any, bookingData: any) {
     ];
 
     console.log(`📝 Добавляемые данные в таблицу ${sheet.title}:`, {
+      строка: newRow,
       месяц: monthYear,
       дата_заселения: formattedBeginDate,
       дни: bookingData.daysCount,
