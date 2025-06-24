@@ -80,6 +80,35 @@ ADMIN_LAST_NAME=Системы
 
 ## Разработка
 
+### Миграции
+
+Миграции выполняются автоматически при запуске контейнера backend.
+
+Если необходимо выполнить миграции вручную, выполните следующие шаги:
+
+```bash
+
+# Подключитесь к контейнеру MySQL
+docker-compose exec mysql mysql -u root -p
+
+# Выберите базу данных
+USE dmd_cottage_sheets;
+
+# Выполните SQL команды из миграции
+ALTER TABLE cells 
+ADD COLUMN booking_id BIGINT NULL COMMENT 'ID внешнего бронирования для связи с webhook данными';
+
+CREATE INDEX idx_cells_booking_id ON cells(booking_id);
+CREATE INDEX idx_cells_sheet_booking ON cells(sheet_id, booking_id);
+
+# Добавьте запись в таблицу миграций
+INSERT INTO migrations (filename, executed_at) 
+VALUES ('007_add_booking_id_to_cells.sql', NOW());
+```
+
+
+
+
 ### Backend
 ```bash
 docker-compose up -d --build backend
