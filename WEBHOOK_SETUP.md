@@ -31,7 +31,8 @@
 **Пример URL:** `https://dmd-cottage.alteran-industries.ru/api/webhook/e9518a9e-0c09-4e60-8f77-0f4f2db43636`
 
 ## Формат данных webhook
-
+http://localhost:3001/api/webhook/4df5d482-cdd4-4521-9085-a1f542ee6aa8
+http://dmd-cottage.alteran-industries.ru/api/webhook/4df5d482-cdd4-4521-9085-a1f542ee6aa8
 Система ожидает данные в следующем формате:
 
 ```json
