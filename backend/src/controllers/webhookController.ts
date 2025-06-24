@@ -206,6 +206,30 @@ async function findTargetSheets(apartmentTitle: string) {
   }
 }
 
+// Форматирование даты в русский месяц и год
+function formatMonthYear(dateString: string): string {
+  const date = new Date(dateString);
+  const monthNames = [
+    'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+  ];
+  
+  const month = monthNames[date.getMonth()];
+  const year = date.getFullYear();
+  
+  return `${month} ${year}`;
+}
+
+// Форматирование даты в формат DD.MM.YYYY
+function formatDate(dateString: string): string {
+  const date = new Date(dateString);
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  
+  return `${day}.${month}.${year}`;
+}
+
 // Добавление данных бронирования в таблицу
 async function addBookingToSheet(sheet: any, bookingData: any) {
   try {
@@ -218,20 +242,38 @@ async function addBookingToSheet(sheet: any, bookingData: any) {
     const lastRow = existingCells.length > 0 ? existingCells[0].row : 0;
     const newRow = lastRow + 1;
 
+    // Форматируем месяц и год из даты заселения
+    const monthYear = formatMonthYear(bookingData.beginDate);
+    
+    // Форматируем даты в российский формат DD.MM.YYYY
+    const formattedBeginDate = formatDate(bookingData.beginDate);
+    const formattedEndDate = formatDate(bookingData.endDate);
+
     // Маппинг данных в ячейки (в соответствии с шаблоном "Журнал заселения DMD Cottage")
     const cellsToCreate = [
-      { row: newRow, column: 0, value: bookingData.beginDate }, // Дата заселения
-      { row: newRow, column: 1, value: bookingData.daysCount.toString() }, // Кол-во дней
-      { row: newRow, column: 2, value: bookingData.endDate }, // Дата выселения
-      { row: newRow, column: 3, value: bookingData.guestName }, // ФИО
-      { row: newRow, column: 4, value: bookingData.phone }, // Телефон
-      { row: newRow, column: 5, value: bookingData.totalAmount.toString() }, // Общая сумма
-      { row: newRow, column: 6, value: bookingData.prepayment.toString() }, // Предоплата
-      { row: newRow, column: 7, value: bookingData.pricePerDay.toString() }, // Доплата за день
-      { row: newRow, column: 8, value: bookingData.statusCode.toString() }, // Статус дома
-      { row: newRow, column: 9, value: bookingData.source }, // Источник
-      { row: newRow, column: 10, value: bookingData.notes }, // Комментарий
+      { row: newRow, column: 0, value: monthYear }, // Месяц (например, "Январь 2025")
+      { row: newRow, column: 1, value: formattedBeginDate }, // Дата заселения (03.01.2025)
+      { row: newRow, column: 2, value: bookingData.daysCount.toString() }, // Кол-во дней
+      { row: newRow, column: 3, value: formattedEndDate }, // Дата выселения (06.01.2025)
+      { row: newRow, column: 4, value: bookingData.guestName }, // ФИО
+      { row: newRow, column: 5, value: bookingData.phone }, // Телефон
+      { row: newRow, column: 6, value: bookingData.totalAmount.toString() }, // Общая сумма
+      { row: newRow, column: 7, value: bookingData.prepayment.toString() }, // Предоплата
+      { row: newRow, column: 8, value: bookingData.pricePerDay.toString() }, // Доплата за день
+      { row: newRow, column: 9, value: bookingData.statusCode.toString() }, // Статус дома
+      { row: newRow, column: 10, value: bookingData.source }, // Источник
+      { row: newRow, column: 11, value: bookingData.notes }, // Комментарий
     ];
+
+    console.log(`📝 Добавляемые данные в таблицу ${sheet.title}:`, {
+      месяц: monthYear,
+      дата_заселения: formattedBeginDate,
+      дни: bookingData.daysCount,
+      дата_выселения: formattedEndDate,
+      фио: bookingData.guestName,
+      телефон: bookingData.phone,
+      сумма: bookingData.totalAmount
+    });
 
     // Создаем ячейки
     for (const cellData of cellsToCreate) {
@@ -244,8 +286,8 @@ async function addBookingToSheet(sheet: any, bookingData: any) {
       });
     }
 
-    console.log(`Добавлена новая строка в таблицу ${sheet.title} (ID: ${sheet.id})`);
+    console.log(`✅ Добавлена новая строка в таблицу ${sheet.title} (ID: ${sheet.id}), строка ${newRow}`);
   } catch (error) {
-    console.error(`Ошибка при добавлении данных в таблицу ${sheet.id}:`, error);
+    console.error(`❌ Ошибка при добавлении данных в таблицу ${sheet.id}:`, error);
   }
 } 
