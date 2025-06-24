@@ -10,6 +10,7 @@ export interface CellAttributes {
   format?: any;
   isLocked: boolean;
   mergedWith?: string;
+  bookingId?: number;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -28,6 +29,7 @@ class Cell extends Model<CellAttributes, CellCreationAttributes> implements Cell
   public format?: any;
   public isLocked!: boolean;
   public mergedWith?: string;
+  public bookingId?: number;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
 
@@ -90,6 +92,12 @@ export const CellFactory = (sequelize: Sequelize) => {
         allowNull: true,
         field: 'merged_with',
         comment: 'Адрес главной ячейки при объединении',
+      },
+      bookingId: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        field: 'booking_id',
+        comment: 'ID внешнего бронирования для связи с webhook данными',
       },
     },
     {

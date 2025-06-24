@@ -160,6 +160,7 @@ function extractBookingData(webhookData: any) {
     const daysDiff = Math.ceil((endDate.getTime() - beginDate.getTime()) / (1000 * 60 * 60 * 24));
 
     const extractedData = {
+      id: bookingSource.id, // ID бронирования для связи
       apartmentTitle: bookingSource.apartment?.title || '',
       beginDate: bookingSource.begin_date,
       endDate: bookingSource.end_date,
@@ -230,27 +231,48 @@ function formatDate(dateString: string): string {
   return `${day}.${month}.${year}`;
 }
 
-// Добавление данных бронирования в таблицу
+// Добавление или обновление данных бронирования в таблице
 async function addBookingToSheet(sheet: any, bookingData: any) {
   try {
-    // Находим последнюю заполненную строку
-    const existingCells = await Cell.findAll({
+    const bookingId = bookingData.id;
+    
+    // Ищем существующие ячейки с данным booking_id
+    const existingBookingCells = await Cell.findAll({
       where: { 
         sheetId: sheet.id,
-        value: { [require('sequelize').Op.ne]: '' } // Исключаем пустые ячейки
+        bookingId: bookingId
       },
-      order: [['row', 'DESC']],
-      limit: 1
+      order: [['column', 'ASC']]
     });
 
-    // Определяем номер новой строки
-    const lastFilledRow = existingCells.length > 0 ? existingCells[0].row : 0;
-    const newRow = lastFilledRow + 1;
+    let targetRow: number;
+    let isUpdate = false;
 
-    console.log(`🔍 Анализ строк в таблице ${sheet.title}:`, {
-      последняя_заполненная_строка: lastFilledRow,
-      новая_строка: newRow,
-      количество_заполненных_ячеек: existingCells.length
+    if (existingBookingCells.length > 0) {
+      // Обновляем существующее бронирование
+      targetRow = existingBookingCells[0].row;
+      isUpdate = true;
+      console.log(`🔄 Обновление существующего бронирования ID ${bookingId} в таблице ${sheet.title}, строка ${targetRow}`);
+    } else {
+      // Создаем новое бронирование - находим последнюю заполненную строку
+      const lastCells = await Cell.findAll({
+        where: { 
+          sheetId: sheet.id,
+          value: { [require('sequelize').Op.ne]: '' } // Исключаем пустые ячейки
+        },
+        order: [['row', 'DESC']],
+        limit: 1
+      });
+
+      const lastFilledRow = lastCells.length > 0 ? lastCells[0].row : 0;
+      targetRow = lastFilledRow + 1;
+      console.log(`➕ Создание нового бронирования ID ${bookingId} в таблице ${sheet.title}, строка ${targetRow}`);
+    }
+
+    console.log(`🔍 Анализ бронирования ID ${bookingId} в таблице ${sheet.title}:`, {
+      операция: isUpdate ? 'обновление' : 'создание',
+      строка: targetRow,
+      существующих_ячеек: existingBookingCells.length
     });
 
     // Форматируем месяц и год из даты заселения
@@ -261,23 +283,25 @@ async function addBookingToSheet(sheet: any, bookingData: any) {
     const formattedEndDate = formatDate(bookingData.endDate);
 
     // Маппинг данных в ячейки (в соответствии с шаблоном "Журнал заселения DMD Cottage")
-    const cellsToCreate = [
-      { row: newRow, column: 0, value: monthYear }, // Месяц (например, "Январь 2025")
-      { row: newRow, column: 1, value: formattedBeginDate }, // Дата заселения (03.01.2025)
-      { row: newRow, column: 2, value: bookingData.daysCount.toString() }, // Кол-во дней
-      { row: newRow, column: 3, value: formattedEndDate }, // Дата выселения (06.01.2025)
-      { row: newRow, column: 4, value: bookingData.guestName }, // ФИО
-      { row: newRow, column: 5, value: bookingData.phone }, // Телефон
-      { row: newRow, column: 6, value: bookingData.totalAmount.toString() }, // Общая сумма
-      { row: newRow, column: 7, value: bookingData.prepayment.toString() }, // Предоплата
-      { row: newRow, column: 8, value: bookingData.pricePerDay.toString() }, // Доплата за день
-      { row: newRow, column: 9, value: bookingData.statusCode.toString() }, // Статус дома
-      { row: newRow, column: 10, value: bookingData.source }, // Источник
-      { row: newRow, column: 11, value: bookingData.notes }, // Комментарий
+    const cellsData = [
+      { row: targetRow, column: 0, value: monthYear }, // Месяц (например, "Январь 2025")
+      { row: targetRow, column: 1, value: formattedBeginDate }, // Дата заселения (03.01.2025)
+      { row: targetRow, column: 2, value: bookingData.daysCount.toString() }, // Кол-во дней
+      { row: targetRow, column: 3, value: formattedEndDate }, // Дата выселения (06.01.2025)
+      { row: targetRow, column: 4, value: bookingData.guestName }, // ФИО
+      { row: targetRow, column: 5, value: bookingData.phone }, // Телефон
+      { row: targetRow, column: 6, value: bookingData.totalAmount.toString() }, // Общая сумма
+      { row: targetRow, column: 7, value: bookingData.prepayment.toString() }, // Предоплата
+      { row: targetRow, column: 8, value: bookingData.pricePerDay.toString() }, // Доплата за день
+      { row: targetRow, column: 9, value: bookingData.statusCode.toString() }, // Статус дома
+      { row: targetRow, column: 10, value: bookingData.source }, // Источник
+      { row: targetRow, column: 11, value: bookingData.notes }, // Комментарий
     ];
 
-    console.log(`📝 Добавляемые данные в таблицу ${sheet.title}:`, {
-      строка: newRow,
+    console.log(`📝 ${isUpdate ? 'Обновляемые' : 'Добавляемые'} данные в таблицу ${sheet.title}:`, {
+      booking_id: bookingId,
+      строка: targetRow,
+      операция: isUpdate ? 'обновление' : 'создание',
       месяц: monthYear,
       дата_заселения: formattedBeginDate,
       дни: bookingData.daysCount,
@@ -287,18 +311,39 @@ async function addBookingToSheet(sheet: any, bookingData: any) {
       сумма: bookingData.totalAmount
     });
 
-    // Создаем ячейки
-    for (const cellData of cellsToCreate) {
-      await Cell.create({
-        sheetId: sheet.id,
-        row: cellData.row,
-        column: cellData.column,
-        value: cellData.value,
-        formula: null
-      });
+    if (isUpdate) {
+      // Обновляем существующие ячейки
+      for (const cellData of cellsData) {
+        await Cell.update(
+          { 
+            value: cellData.value,
+            formula: null 
+          },
+          {
+            where: {
+              sheetId: sheet.id,
+              row: cellData.row,
+              column: cellData.column,
+              bookingId: bookingId
+            }
+          }
+        );
+      }
+    } else {
+      // Создаем новые ячейки
+      for (const cellData of cellsData) {
+        await Cell.create({
+          sheetId: sheet.id,
+          row: cellData.row,
+          column: cellData.column,
+          value: cellData.value,
+          formula: null,
+          bookingId: bookingId
+        });
+      }
     }
 
-    console.log(`✅ Добавлена новая строка в таблицу ${sheet.title} (ID: ${sheet.id}), строка ${newRow}`);
+    console.log(`✅ ${isUpdate ? 'Обновлено' : 'Добавлено'} бронирование ID ${bookingId} в таблице ${sheet.title} (ID: ${sheet.id}), строка ${targetRow}`);
   } catch (error) {
     console.error(`❌ Ошибка при добавлении данных в таблицу ${sheet.id}:`, error);
   }
