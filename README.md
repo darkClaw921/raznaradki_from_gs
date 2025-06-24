@@ -1,6 +1,6 @@
 # DMD Cottage Sheets
 
-**Production URL**: https://dmd-cottage.alteran-industries.ru
+**Production URL**: https://server.name.ru
 
 Веб-сервис для совместной работы с таблицами, аналог Google Sheets для компании DMD cottage.
 
@@ -41,8 +41,9 @@
    ```bash
    docker-compose up -d
    ```
+также добавте свой домен в файл backend/src/app.ts в переменную allowedOrigins
 
-5. Сервис доступен по адресу: https://dmd-cottage.alteran-industries.ru
+
 
 ### Переменные окружения для production
 
@@ -62,9 +63,9 @@ NODE_ENV=production
 PORT=3001
 
 # Production URLs
-FRONTEND_URL=https://dmd-cottage.alteran-industries.ru
-REACT_APP_API_URL=https://dmd-cottage.alteran-industries.ru/api
-REACT_APP_WS_URL=wss://dmd-cottage.alteran-industries.ru
+FRONTEND_URL=https://server.name.ru
+REACT_APP_API_URL=https://server.name.ru/api
+REACT_APP_WS_URL=wss://server.name.ru
 
 # Администратор (создается автоматически)
 ADMIN_EMAIL=admin@dmdcottage.com
