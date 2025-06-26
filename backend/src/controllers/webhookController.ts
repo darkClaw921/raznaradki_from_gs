@@ -293,7 +293,6 @@ async function addBookingToSheet(sheet: any, bookingData: any) {
       { row: targetRow, column: 6, value: bookingData.totalAmount.toString() }, // Общая сумма
       { row: targetRow, column: 7, value: bookingData.prepayment.toString() }, // Предоплата
       { row: targetRow, column: 8, value: bookingData.pricePerDay.toString() }, // Доплата за день
-      { row: targetRow, column: 9, value: bookingData.statusCode.toString() }, // Статус дома
       { row: targetRow, column: 10, value: bookingData.source }, // Источник
       { row: targetRow, column: 11, value: bookingData.notes }, // Комментарий
     ];

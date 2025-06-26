@@ -31,7 +31,8 @@ import {
   Palette,
   FontDownload,
   History,
-  Add
+  Add,
+  WrapText
 } from '@mui/icons-material';
 
 interface FormatToolbarProps {
@@ -107,6 +108,16 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({
       setTextAlign(newAlignment);
       handleFontFormat('textAlign', newAlignment);
     }
+  };
+
+  const handleWrapText = () => {
+    const format = {
+      textWrap: 'wrap', // Добавляем флаг для автоподстройки высоты
+      whiteSpace: 'normal',
+      wordWrap: 'break-word',
+      overflow: 'visible'
+    };
+    onFormat(format);
   };
 
   const handleShowHistory = () => {
@@ -251,6 +262,18 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({
               <FormatAlignRight />
             </ToggleButton>
           </ToggleButtonGroup>
+
+          <Divider orientation="vertical" flexItem />
+
+          {/* Перенос текста */}
+          <Tooltip title="Перенос текста">
+            <IconButton 
+              onClick={handleWrapText}
+              size="small"
+            >
+              <WrapText />
+            </IconButton>
+          </Tooltip>
 
           <Divider orientation="vertical" flexItem />
 

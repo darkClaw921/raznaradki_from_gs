@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Sheet, User, UserSheet, Cell, SheetTemplate } from '../models';
-import { Op } from 'sequelize';
+import { Op, QueryTypes } from 'sequelize';
 
 // Получение списка таблиц пользователя
 export const getSheets = async (req: Request, res: Response) => {
@@ -144,6 +144,9 @@ export const getSheet = async (req: Request, res: Response) => {
         userPermissions = userSheet.permission;
       }
     }
+
+    // Логируем settings для диагностики
+    console.log(`📊 getSheet - Sheet ID: ${sheet.id}, Settings:`, sheet.settings);
 
     res.json({
       sheet,
@@ -994,8 +997,11 @@ export const resizeColumn = async (req: Request, res: Response) => {
     const { column, width } = req.body;
     const userId = req.user.id;
 
+    console.log(`🔧 Изменение размера столбца - Sheet ID: ${id}, Column: ${column}, Width: ${width}, User: ${userId}`);
+
     const sheet = await Sheet.findByPk(id);
     if (!sheet) {
+      console.error(`❌ Таблица не найдена: ${id}`);
       return res.status(404).json({
         error: 'Таблица не найдена'
       });
@@ -1009,6 +1015,7 @@ export const resizeColumn = async (req: Request, res: Response) => {
     const hasAccess = sheet.createdBy === userId || userSheet;
 
     if (!hasAccess) {
+      console.error(`❌ Нет доступа к таблице - User: ${userId}, Sheet: ${id}`);
       return res.status(403).json({
         error: 'Нет доступа к таблице'
       });
@@ -1017,24 +1024,68 @@ export const resizeColumn = async (req: Request, res: Response) => {
     // Обновляем настройки размеров
     const currentSettings = sheet.settings || {};
     const columnSizes = currentSettings.columnSizes || {};
+    console.log(`📊 Текущие настройки столбцов:`, columnSizes);
+    
     columnSizes[column] = width;
+    console.log(`📊 Новые настройки столбцов:`, columnSizes);
 
-    await sheet.update({
-      settings: {
-        ...currentSettings,
-        columnSizes
-      }
-    });
-
-    res.json({
-      message: 'Размер столбца изменен',
+    const updatedSettings = {
+      ...currentSettings,
       columnSizes
-    });
+    };
+
+    console.log(`🔄 Обновляем settings - ДО:`, currentSettings);
+    console.log(`🔄 Обновляем settings - ПОСЛЕ:`, updatedSettings);
+
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Используем прямой SQL для обновления JSON поля
+    try {
+      const settingsJson = JSON.stringify(updatedSettings);
+      console.log(`🔄 JSON для сохранения:`, settingsJson);
+      
+      const updateQuery = `UPDATE sheets SET settings = ? WHERE id = ?`;
+      await sheet.sequelize?.query(updateQuery, {
+        replacements: [settingsJson, id],
+        type: QueryTypes.UPDATE
+      });
+      
+      console.log(`📝 Использован прямой SQL для сохранения JSON поля`);
+
+      // Перезагружаем sheet из базы для проверки сохранения
+      await sheet.reload();
+      console.log(`✅ Размер столбца изменен успешно - Column: ${column}, Width: ${width}`);
+      console.log(`🔍 Проверка сохранения - settings в базе:`, sheet.settings);
+      
+      // Дополнительная проверка - получаем данные напрямую из MySQL
+      const directQuery = await sheet.sequelize?.query(`SELECT settings FROM sheets WHERE id = ${id}`);
+      console.log(`🔍 Прямой запрос MySQL:`, directQuery?.[0]?.[0]);
+
+      res.json({
+        message: 'Размер столбца изменен',
+        columnSizes,
+        settings: sheet.settings
+      });
+      
+    } catch (sqlError) {
+      console.error(`❌ Ошибка SQL обновления:`, sqlError);
+      
+      // Fallback - пробуем старый способ
+      sheet.settings = updatedSettings;
+      sheet.changed('settings', true);
+      await sheet.save();
+      await sheet.reload();
+      
+      res.json({
+        message: 'Размер столбца изменен (fallback)',
+        columnSizes,
+        settings: sheet.settings
+      });
+    }
 
   } catch (error) {
-    console.error('Ошибка изменения размера столбца:', error);
+    console.error('❌ Ошибка изменения размера столбца:', error);
     res.status(500).json({
-      error: 'Ошибка сервера'
+      error: 'Ошибка сервера',
+      details: error.message
     });
   }
 };
@@ -1071,17 +1122,50 @@ export const resizeRow = async (req: Request, res: Response) => {
     const rowSizes = currentSettings.rowSizes || {};
     rowSizes[row] = height;
 
-    await sheet.update({
-      settings: {
-        ...currentSettings,
-        rowSizes
-      }
-    });
-
-    res.json({
-      message: 'Размер строки изменен',
+    const updatedRowSettings = {
+      ...currentSettings,
       rowSizes
-    });
+    };
+
+    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Используем прямой SQL для обновления JSON поля
+    try {
+      const settingsJson = JSON.stringify(updatedRowSettings);
+      console.log(`🔄 JSON для сохранения строки:`, settingsJson);
+      
+      const updateQuery = `UPDATE sheets SET settings = ? WHERE id = ?`;
+      await sheet.sequelize?.query(updateQuery, {
+        replacements: [settingsJson, id],
+        type: QueryTypes.UPDATE
+      });
+      
+      console.log(`📝 Использован прямой SQL для сохранения JSON поля строки`);
+
+      // Перезагружаем sheet из базы для проверки сохранения
+      await sheet.reload();
+      console.log(`✅ Размер строки изменен успешно - Row: ${row}, Height: ${height}`);
+      console.log(`🔍 Проверка сохранения - settings в базе:`, sheet.settings);
+
+      res.json({
+        message: 'Размер строки изменен',
+        rowSizes,
+        settings: sheet.settings
+      });
+      
+    } catch (sqlError) {
+      console.error(`❌ Ошибка SQL обновления строки:`, sqlError);
+      
+      // Fallback - пробуем старый способ
+      sheet.settings = updatedRowSettings;
+      sheet.changed('settings', true);
+      await sheet.save();
+      await sheet.reload();
+      
+      res.json({
+        message: 'Размер строки изменен (fallback)',
+        rowSizes,
+        settings: sheet.settings
+      });
+    }
 
   } catch (error) {
     console.error('Ошибка изменения размера строки:', error);

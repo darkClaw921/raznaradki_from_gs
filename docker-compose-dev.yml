@@ -26,8 +26,8 @@ services:
   # Backend API - Production Mode
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: dmd_backend
     restart: unless-stopped
     environment:
@@ -70,22 +70,22 @@ services:
     networks:
       - dmd_network
 
-  # Adminer для управления БД (опционально)
-  adminer:
-    image: adminer:latest
-    container_name: dmd_adminer
+   # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: dmd_nginx
     restart: unless-stopped
     ports:
-      - "8080:8080"
-    environment:
-      ADMINER_DEFAULT_SERVER: mysql
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
-      mysql:
-        condition: service_healthy
+      - backend
+      - frontend
     networks:
       - dmd_network
-    profiles:
-      - admin
 
   # PHPMyAdmin для управления БД (опционально)
   phpmyadmin:

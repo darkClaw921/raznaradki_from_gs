@@ -1,5 +1,5 @@
-import React from 'react';
-import { Box, TextField } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import { Box, TextField, Select, MenuItem, FormControl } from '@mui/material';
 
 interface CellProps {
   row: number;
@@ -21,7 +21,15 @@ interface CellProps {
   onKeyDown: (e: React.KeyboardEvent) => void;
   onBlur?: () => void;
   readOnly: boolean;
+  sheetTitle?: string;
 }
+
+const HOUSE_STATUS_OPTIONS = [
+  'Выс/Зас',
+  'Проживают', 
+  'Свободен',
+  'Бронь'
+];
 
 const Cell: React.FC<CellProps> = ({
   row,
@@ -43,8 +51,30 @@ const Cell: React.FC<CellProps> = ({
   onKeyDown,
   onBlur,
   readOnly,
+  sheetTitle = '',
 }) => {
-  // Применяем форматирование к стилям
+  const [selectOpen, setSelectOpen] = useState(false);
+
+  const isHouseStatusField = () => {
+    const isJournalSheet = sheetTitle.includes('Журнал заселения');
+    const isColumn9 = column === 9;
+    const isNotHeaderRow = row > 0;
+    
+    return isJournalSheet && isColumn9 && isNotHeaderRow;
+  };
+
+  useEffect(() => {
+    if (isEditing && isHouseStatusField()) {
+      const timer = setTimeout(() => {
+        setSelectOpen(true);
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    } else {
+      setSelectOpen(false);
+    }
+  }, [isEditing, column, row, sheetTitle]);
+
   const getFormattedStyles = () => {
     const styles: any = {
       width,
@@ -57,17 +87,14 @@ const Cell: React.FC<CellProps> = ({
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap',
       cursor: readOnly ? 'default' : 'pointer',
-      // Предотвращаем выделение текста браузером
       userSelect: 'none',
       WebkitUserSelect: 'none',
       MozUserSelect: 'none',
       msUserSelect: 'none',
-      // Предотвращаем контекстное меню для лучшего UX
       WebkitTouchCallout: 'none',
       WebkitTapHighlightColor: 'transparent',
     };
 
-    // Применяем пользовательское форматирование
     if (format.fontFamily) styles.fontFamily = format.fontFamily;
     if (format.fontSize) styles.fontSize = `${format.fontSize}px`;
     if (format.fontWeight) styles.fontWeight = format.fontWeight;
@@ -76,8 +103,16 @@ const Cell: React.FC<CellProps> = ({
     if (format.textColor) styles.color = format.textColor;
     if (format.backgroundColor) styles.backgroundColor = format.backgroundColor;
     if (format.textAlign) styles.textAlign = format.textAlign;
+    
+    // Поддержка переноса текста
+    if (format.whiteSpace) {
+      styles.whiteSpace = format.whiteSpace;
+      styles.overflow = format.overflow || 'visible';
+      styles.wordWrap = format.wordWrap || 'break-word';
+      styles.textOverflow = 'unset';
+      delete styles.textOverflow;
+    }
 
-    // Границы
     if (format.border) {
       const border = format.border;
       const borderStyle = `${border.width || 1}px ${border.style || 'solid'} ${border.color || '#000000'}`;
@@ -90,7 +125,6 @@ const Cell: React.FC<CellProps> = ({
           styles.border = borderStyle;
           break;
         case 'inner':
-          // Внутренние границы применяются только если есть соседние ячейки с тем же форматированием
           styles.borderRight = borderStyle;
           styles.borderBottom = borderStyle;
           break;
@@ -98,7 +132,6 @@ const Cell: React.FC<CellProps> = ({
           styles.border = borderStyle;
       }
     } else {
-      // Стандартные границы с улучшенной визуализацией
       if (isSelected) {
         styles.border = '2px solid #1976d2';
         styles.boxShadow = '0 0 0 1px #1976d2';
@@ -107,7 +140,6 @@ const Cell: React.FC<CellProps> = ({
         styles.border = '1px solid #2196f3';
         styles.backgroundColor = !format.backgroundColor ? '#f0f8ff' : format.backgroundColor;
       } else if (isInClipboard) {
-        // Пунктирная граница для скопированных ячеек
         styles.border = '2px dashed #ff9800';
         styles.backgroundColor = !format.backgroundColor ? '#fff3e0' : format.backgroundColor;
       } else {
@@ -115,7 +147,6 @@ const Cell: React.FC<CellProps> = ({
       }
     }
 
-    // Цвет фона для выделенных ячеек
     if (!format.backgroundColor) {
       if (isSelected) {
         styles.backgroundColor = '#e3f2fd';
@@ -130,7 +161,6 @@ const Cell: React.FC<CellProps> = ({
       }
     }
 
-    // Эффект hover только если ячейка не выделена
     if (!isSelected && !isInRange && !isInClipboard) {
       styles['&:hover'] = {
         backgroundColor: readOnly ? '#f9f9f9' : '#f5f5f5',
@@ -141,15 +171,81 @@ const Cell: React.FC<CellProps> = ({
     return styles;
   };
 
-  // Обработчик mouseDown с предотвращением выделения текста
   const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault(); // Предотвращаем выделение текста
+    e.preventDefault();
     if (onMouseDown) {
       onMouseDown();
     }
   };
 
   if (isEditing) {
+    if (isHouseStatusField()) {
+      return (
+        <FormControl
+          size="small"
+          sx={{
+            width,
+            height,
+            '& .MuiOutlinedInput-root': {
+              height: '100%',
+              '& fieldset': {
+                border: '2px solid #1976d2',
+              },
+            },
+          }}
+        >
+          <Select
+            value={editValue || ''}
+            open={selectOpen}
+            onOpen={() => setSelectOpen(true)}
+            onClose={() => setSelectOpen(false)}
+            onChange={(e) => {
+              onEditValueChange(e.target.value);
+              setSelectOpen(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === ' ' || e.key === 'Spacebar') {
+                e.preventDefault();
+                setSelectOpen(true);
+              } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSelectOpen(true);
+              } else {
+                onKeyDown(e);
+              }
+            }}
+            onBlur={(e) => {
+              if (!selectOpen) {
+                if (onBlur) onBlur();
+              }
+            }}
+            autoFocus
+            displayEmpty
+            sx={{
+              height: '100%',
+              '& .MuiSelect-select': {
+                padding: '4px 8px',
+                fontSize: format.fontSize ? `${format.fontSize}px` : '0.875rem',
+                fontFamily: format.fontFamily || 'inherit',
+                fontWeight: format.fontWeight || 'normal',
+                fontStyle: format.fontStyle || 'normal',
+                textAlign: format.textAlign || 'left',
+              },
+            }}
+          >
+            <MenuItem value="">
+              <em>Выберите статус</em>
+            </MenuItem>
+            {HOUSE_STATUS_OPTIONS.map((option) => (
+              <MenuItem key={option} value={option}>
+                {option}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      );
+    }
+
     return (
       <TextField
         value={editValue}
@@ -188,7 +284,7 @@ const Cell: React.FC<CellProps> = ({
       onMouseDown={handleMouseDown}
       onMouseEnter={onMouseEnter}
       onDoubleClick={onDoubleClick}
-      title={value} // Показываем полный текст в tooltip
+      title={value}
     >
       {value}
     </Box>

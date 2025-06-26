@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Box, Paper, TextField } from '@mui/material';
-import { cellsApi, sheetsExtendedApi } from '../../services/api';
+import { cellsApi, sheetsExtendedApi, sheetsApi } from '../../services/api';
 import Cell from './Cell';
 import FormatToolbar from './FormatToolbar';
 import CellHistoryDialog from './CellHistoryDialog';
@@ -57,6 +57,24 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
   const [historyCell, setHistoryCell] = useState<{ row: number; column: number } | null>(null);
   const [columnSizes, setColumnSizes] = useState<{ [key: number]: number }>({});
   const [rowSizes, setRowSizes] = useState<{ [key: number]: number }>({});
+  
+  // Инициализация размеров из settings при загрузке таблицы
+  useEffect(() => {
+    if (sheet?.settings) {
+      const { columnSizes: savedColumnSizes = {}, rowSizes: savedRowSizes = {} } = sheet.settings;
+      console.log('🔄 Загружаем размеры из settings:', { savedColumnSizes, savedRowSizes });
+      setColumnSizes(savedColumnSizes);
+      setRowSizes(savedRowSizes);
+    }
+  }, [sheet?.settings]);
+  
+  // Дополнительная инициализация при первой загрузке sheet
+  useEffect(() => {
+    if (sheet && sheet.id) {
+      console.log('📊 Инициализация таблицы:', sheet.name, 'ID:', sheet.id);
+      console.log('⚙️ Settings таблицы:', sheet.settings);
+    }
+  }, [sheet]);
   
   // Состояние для буфера обмена
   const [clipboard, setClipboard] = useState<{
@@ -582,8 +600,61 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
     newCells.set(key, updatedCell);
     setCells(newCells);
 
+    // Автоматический расчет доплаты в журнале заселения
+    if (sheet.name?.includes('Журнал заселения')) {
+      calculateAdditionalPayment(newCells, row, column);
+    }
+
     // Сохраняем в backend только если есть изменения
     debouncedSaveCell(row, column, value, formula);
+  };
+
+  // Функция автоматического расчета доплаты (общая сумма - предоплата)
+  const calculateAdditionalPayment = (cellsMap: Map<string, CellData>, row: number, column: number) => {
+    // Проверяем, что изменили столбец "Общая сумма" (6) или "Предоплата" (7)
+    if (column === 6 || column === 7) {
+      const totalAmountKey = getCellKey(row, 6); // Общая сумма
+      const prepaymentKey = getCellKey(row, 7);  // Предоплата
+      const additionalPaymentKey = getCellKey(row, 8); // Доплата
+      
+      const totalAmount = cellsMap.get(totalAmountKey)?.value || '';
+      const prepayment = cellsMap.get(prepaymentKey)?.value || '';
+      
+      if (totalAmount && prepayment) {
+        // Очищаем значения от пробелов и запятых для расчета
+        const totalNum = parseFloat(totalAmount.replace(/[\s,]/g, '').replace(',', '.'));
+        const prepaymentNum = parseFloat(prepayment.replace(/[\s,]/g, '').replace(',', '.'));
+        
+        if (!isNaN(totalNum) && !isNaN(prepaymentNum)) {
+          const additionalPayment = totalNum - prepaymentNum;
+          
+          // Форматируем результат с пробелами для тысяч
+          const formattedValue = additionalPayment.toLocaleString('ru-RU', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+          });
+          
+          // Устанавливаем значение доплаты
+          cellsMap.set(additionalPaymentKey, { 
+            row, 
+            column: 8, 
+            value: formattedValue 
+          });
+          
+          // Сохраняем в базу данных асинхронно
+          setTimeout(async () => {
+            try {
+              await cellsApi.updateCell(sheet.id, row, 8, {
+                value: formattedValue
+              });
+              console.log(`✅ Автоматически рассчитана доплата: ${formattedValue} (общая: ${totalAmount}, предоплата: ${prepayment})`);
+            } catch (error) {
+              console.error('❌ Ошибка сохранения автоматически рассчитанной доплаты:', error);
+            }
+          }, 100);
+        }
+      }
+    }
   };
 
   const handleCellClick = (row: number, column: number, e?: React.MouseEvent) => {
@@ -599,6 +670,9 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
       return;
     }
 
+    // ✅ ДОБАВЛЕНО: Специальная логика для поля "Статус дома"
+    const isHouseStatusField = sheet.name?.includes('Журнал заселения') && column === 9 && row > 0;
+    
     // Если кликнули на уже выбранную ячейку - начинаем редактирование
     if (selectedCell && selectedCell.row === row && selectedCell.column === column) {
       setEditingCell({ row, column });
@@ -608,7 +682,20 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
       const cell = cells.get(key);
       const editableValue = cell?.formula || cell?.value || '';
       setEditValue(editableValue);
-    } else {
+    } 
+    // ✅ ДОБАВЛЕНО: Для поля статуса дома сразу активируем режим редактирования
+    else if (isHouseStatusField) {
+      setSelectedCell({ row, column });
+      setSelectedRange({ startRow: row, endRow: row, startColumn: column, endColumn: column });
+      setEditingCell({ row, column });
+      
+      // Для редактирования показываем текущее значение
+      const key = getCellKey(row, column);
+      const cell = cells.get(key);
+      const editableValue = cell?.formula || cell?.value || '';
+      setEditValue(editableValue);
+    } 
+    else {
       // Иначе просто выбираем ячейку
       setSelectedCell({ row, column });
       setSelectedRange({ startRow: row, endRow: row, startColumn: column, endColumn: column });
@@ -1060,6 +1147,48 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
         }
       }
       setCells(newCells);
+
+      // Автоматическая подстройка высоты строки при включении переноса текста
+      if (format.textWrap === 'wrap') {
+        for (let row = selectedRange.startRow; row <= selectedRange.endRow; row++) {
+          // Рассчитываем оптимальную высоту на основе содержимого ячеек в строке
+          let maxRequiredHeight = ROW_HEIGHT_DEFAULT;
+          
+          for (let col = selectedRange.startColumn; col <= selectedRange.endColumn; col++) {
+            const cellValue = getCellValue(row, col);
+            const columnWidth = getColumnWidth(col);
+            
+            if (cellValue && cellValue.length > 0) {
+              // Простой алгоритм расчета высоты: 
+              // ~10 символов на 100px ширины = 1 строка текста
+              // каждая строка текста ~20px высоты
+              const charWidth = 8; // примерная ширина символа в пикселях
+              const charsPerLine = Math.floor((columnWidth - 16) / charWidth); // -16px для padding
+              const linesNeeded = Math.ceil(cellValue.length / charsPerLine);
+              const lineHeight = 20; // высота одной строки текста
+              const requiredHeight = Math.max(ROW_HEIGHT_DEFAULT, linesNeeded * lineHeight + 8); // +8px padding
+              
+              maxRequiredHeight = Math.max(maxRequiredHeight, requiredHeight);
+            }
+          }
+          
+          const currentHeight = getRowHeight(row);
+          // Увеличиваем высоту минимум до 60px или до рассчитанной высоты
+          const newHeight = Math.max(currentHeight, maxRequiredHeight, 60);
+          
+          if (newHeight !== currentHeight) {
+            setRowSizes(prev => ({ ...prev, [row]: newHeight }));
+            
+            // Сохраняем новую высоту в backend
+            try {
+              await sheetsExtendedApi.resizeRow(sheet.id.toString(), row, newHeight);
+              console.log(`✅ Автоматически увеличена высота строки ${row} до ${newHeight}px для переноса текста (содержимое требует ${maxRequiredHeight}px)`);
+            } catch (error) {
+              console.error('❌ Ошибка автоматического изменения высоты строки:', error);
+            }
+          }
+        }
+      }
     } catch (error) {
       console.error('Ошибка применения форматирования:', error);
     }
@@ -1106,8 +1235,6 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
   const getColumnWidth = (column: number): number => {
     return columnSizes[column] || 100;
   };
-
-
 
   // Функция генерации названий столбцов в правильном формате A, B, Z, AA, AB
   const generateColumnName = (columnIndex: number): string => {
@@ -1167,9 +1294,11 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
               e.preventDefault();
               const startX = e.clientX;
               const startWidth = width;
+              let finalWidth = startWidth; // Переменная для отслеживания финальной ширины
               
               const handleMouseMove = (e: MouseEvent) => {
                 const newWidth = Math.max(50, startWidth + (e.clientX - startX));
+                finalWidth = newWidth; // Сохраняем актуальную ширину
                 setColumnSizes(prev => ({ ...prev, [col]: newWidth }));
               };
               
@@ -1178,9 +1307,36 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
                 document.removeEventListener('mouseup', handleMouseUp);
                 
                 try {
-                  await sheetsExtendedApi.resizeColumn(sheet.id.toString(), col, columnSizes[col] || 100);
+                  console.log(`🔧 Сохраняем ширину столбца ${col}: ${finalWidth}px в таблице ${sheet.id}`);
+                  const response = await sheetsExtendedApi.resizeColumn(sheet.id.toString(), col, finalWidth);
+                  console.log(`✅ Сохранена ширина столбца ${col}: ${finalWidth}px`, response);
+                  
+                  // Проверяем что settings действительно обновились
+                  if (response?.data?.settings?.columnSizes) {
+                    console.log(`📊 Обновленные размеры столбцов:`, response.data.settings.columnSizes);
+                    
+                    // Обновляем локальное состояние вместо перезагрузки
+                    setColumnSizes(prevSizes => ({
+                      ...prevSizes,
+                      ...response.data.settings.columnSizes
+                    }));
+                  } else {
+                    console.warn(`⚠️ Settings не получены в ответе:`, response);
+                    
+                    // Если settings не получены, попробуем перезагрузить sheet
+                    try {
+                      console.log(`🔄 Перезагружаем sheet для получения актуальных settings`);
+                      const sheetResponse = await sheetsApi.getSheet(sheet.id.toString());
+                      if (sheetResponse.data?.sheet?.settings?.columnSizes) {
+                        console.log(`📊 Загружены settings из getSheet:`, sheetResponse.data.sheet.settings.columnSizes);
+                        setColumnSizes(sheetResponse.data.sheet.settings.columnSizes);
+                      }
+                    } catch (reloadError) {
+                      console.error('❌ Ошибка перезагрузки sheet:', reloadError);
+                    }
+                  }
                 } catch (error) {
-                  console.error('Ошибка сохранения размера столбца:', error);
+                  console.error('❌ Ошибка сохранения размера столбца:', error);
                 }
               };
               
@@ -1234,9 +1390,11 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
             e.preventDefault();
             const startY = e.clientY;
             const startHeight = height;
+            let finalHeight = startHeight; // Переменная для отслеживания финальной высоты
             
             const handleMouseMove = (e: MouseEvent) => {
               const newHeight = Math.max(20, startHeight + (e.clientY - startY));
+              finalHeight = newHeight; // Сохраняем актуальную высоту
               setRowSizes(prev => ({ ...prev, [row]: newHeight }));
             };
             
@@ -1245,9 +1403,24 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
               document.removeEventListener('mouseup', handleMouseUp);
               
               try {
-                await sheetsExtendedApi.resizeRow(sheet.id.toString(), row, rowSizes[row] || 30);
+                console.log(`🔧 Сохраняем высоту строки ${row}: ${finalHeight}px в таблице ${sheet.id}`);
+                const response = await sheetsExtendedApi.resizeRow(sheet.id.toString(), row, finalHeight);
+                console.log(`✅ Сохранена высота строки ${row}: ${finalHeight}px`, response);
+                
+                // Проверяем что settings действительно обновились
+                if (response?.data?.settings?.rowSizes) {
+                  console.log(`📊 Обновленные размеры строк:`, response.data.settings.rowSizes);
+                  
+                  // Обновляем локальное состояние
+                  setRowSizes(prevSizes => ({
+                    ...prevSizes,
+                    ...response.data.settings.rowSizes
+                  }));
+                } else {
+                  console.warn(`⚠️ Settings для строк не получены в ответе:`, response);
+                }
               } catch (error) {
-                console.error('Ошибка сохранения размера строки:', error);
+                console.error('❌ Ошибка сохранения размера строки:', error);
               }
             };
             
@@ -1319,6 +1492,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
                     onKeyDown={handleEditKeyDown}
                     onBlur={handleEditBlur}
                     readOnly={userPermissions === 'read'}
+                    sheetTitle={sheet.name || ''}
                   />
                 );
               }
