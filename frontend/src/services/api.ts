@@ -21,6 +21,11 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    // Логируем все исходящие запросы
+    console.log(`🌐 API Request: ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`, {
+      data: config.data,
+      params: config.params
+    });
     return config;
   },
   (error) => {
@@ -30,8 +35,19 @@ api.interceptors.request.use(
 
 // Interceptor для обработки ошибок
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log(`✅ API Response: ${response.config.method?.toUpperCase()} ${response.config.url}`, {
+      status: response.status,
+      data: response.data
+    });
+    return response;
+  },
   (error) => {
+    console.error(`❌ API Error: ${error.config?.method?.toUpperCase()} ${error.config?.url}`, {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message
+    });
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       window.location.href = '/login';
@@ -82,9 +98,15 @@ export const sheetsApi = {
     isPublic?: boolean;
   }) => api.post('/sheets', sheetData),
   
-  updateSheet: (id: string, sheetData: any) => api.put(`/sheets/${id}`, sheetData),
+  updateSheet: (id: string, sheetData: any) => {
+    console.log('🔄 API updateSheet вызван:', { id, sheetData });
+    return api.put(`/sheets/${id}`, sheetData);
+  },
   
-  deleteSheet: (id: string) => api.delete(`/sheets/${id}`),
+  deleteSheet: (id: string) => {
+    console.log('🔄 API deleteSheet вызван:', { id });
+    return api.delete(`/sheets/${id}`);
+  },
   
   addUserToSheet: (sheetId: string, userData: {
     userId: number;

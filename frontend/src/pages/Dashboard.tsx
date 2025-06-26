@@ -37,6 +37,8 @@ import {
   AdminPanelSettings,
   TableView,
   Description,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { AppDispatch, RootState } from '../store';
 import { logout } from '../store/authSlice';
@@ -85,6 +87,14 @@ const Dashboard: React.FC = () => {
   const [sourceSheetIds, setSourceSheetIds] = useState<number[]>([]);
   const [availableJournals, setAvailableJournals] = useState<Sheet[]>([]);
 
+  // Состояние для меню действий с таблицами
+  const [sheetMenuAnchor, setSheetMenuAnchor] = useState<null | HTMLElement>(null);
+  const [selectedSheet, setSelectedSheet] = useState<Sheet | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+
   useEffect(() => {
     loadSheets();
     loadTemplates();
@@ -94,6 +104,8 @@ const Dashboard: React.FC = () => {
     try {
       dispatch(setLoading(true));
       const response = await sheetsApi.getSheets();
+      console.log('Загруженные таблицы:', response.data.sheets);
+      console.log('Текущий пользователь:', user?.id);
       dispatch(setSheets(response.data.sheets));
     } catch (error) {
       console.error('Ошибка загрузки таблиц:', error);
@@ -209,7 +221,100 @@ const Dashboard: React.FC = () => {
     setNewSheetDescription('');
     setSelectedTemplate(null);
     setSelectedTab(0);
-            setSourceSheetIds([]);
+    setSourceSheetIds([]);
+  };
+
+  // Обработчики для меню действий с таблицами
+  const handleSheetMenuOpen = (event: React.MouseEvent<HTMLElement>, sheet: Sheet) => {
+    console.log('📱 Меню открыто для таблицы:', sheet);
+    event.stopPropagation();
+    setSheetMenuAnchor(event.currentTarget);
+    setSelectedSheet(sheet);
+  };
+
+  const handleSheetMenuClose = () => {
+    console.log('📱 Меню закрыто');
+    setSheetMenuAnchor(null);
+    // НЕ обнуляем selectedSheet здесь - он нужен в диалогах!
+    // setSelectedSheet(null);
+  };
+
+  const handleEditSheet = () => {
+    console.log('🖊️ handleEditSheet вызвана, selectedSheet:', selectedSheet);
+    if (selectedSheet) {
+      setEditName(selectedSheet.name);
+      setEditDescription(selectedSheet.description || '');
+      setEditDialogOpen(true);
+      console.log('✅ Диалог редактирования открыт');
+    }
+    handleSheetMenuClose();
+  };
+
+  const handleDeleteSheet = () => {
+    console.log('🗑️ handleDeleteSheet вызвана, selectedSheet:', selectedSheet);
+    setDeleteDialogOpen(true);
+    handleSheetMenuClose();
+    console.log('✅ Диалог удаления открыт');
+  };
+
+  const confirmEditSheet = async () => {
+    console.log('💾 confirmEditSheet ЗАПУЩЕНА');
+    if (!selectedSheet || !editName.trim()) {
+      console.log('❌ Проверка не пройдена:', { selectedSheet, editName });
+      return;
+    }
+
+    console.log('Редактирование таблицы:', {
+      id: selectedSheet.id,
+      name: editName,
+      description: editDescription,
+      currentUser: user?.id,
+      sheetCreatedBy: selectedSheet.createdBy
+    });
+
+    try {
+      const response = await sheetsApi.updateSheet(selectedSheet.id.toString(), {
+        name: editName,
+        description: editDescription || undefined
+      });
+      console.log('Ответ сервера при редактировании:', response);
+      await loadSheets();
+      setEditDialogOpen(false);
+      setEditName('');
+      setEditDescription('');
+      setSelectedSheet(null);
+    } catch (error: any) {
+      console.error('Ошибка обновления таблицы:', error);
+      console.error('Детали ошибки:', error.response?.data || error.message);
+      alert(`Ошибка редактирования: ${error.response?.data?.error || error.message}`);
+    }
+  };
+
+  const confirmDeleteSheet = async () => {
+    console.log('🗑️ confirmDeleteSheet ЗАПУЩЕНА');
+    if (!selectedSheet) {
+      console.log('❌ selectedSheet отсутствует:', selectedSheet);
+      return;
+    }
+
+    console.log('Удаление таблицы:', {
+      id: selectedSheet.id,
+      name: selectedSheet.name,
+      currentUser: user?.id,
+      sheetCreatedBy: selectedSheet.createdBy
+    });
+
+    try {
+      const response = await sheetsApi.deleteSheet(selectedSheet.id.toString());
+      console.log('Ответ сервера при удалении:', response);
+      await loadSheets();
+      setDeleteDialogOpen(false);
+      setSelectedSheet(null);
+    } catch (error: any) {
+      console.error('Ошибка удаления таблицы:', error);
+      console.error('Детали ошибки:', error.response?.data || error.message);
+      alert(`Ошибка удаления: ${error.response?.data?.error || error.message}`);
+    }
   };
 
   const handleCreateEmptySheet = async () => {
@@ -336,9 +441,15 @@ const Dashboard: React.FC = () => {
                     >
                       Открыть
                     </Button>
-                    <IconButton size="small">
-                      <MoreVertIcon />
-                    </IconButton>
+                    {/* Показываем кнопку действий только создателю таблицы */}
+                    {(sheet.createdBy === user?.id || user?.role?.name === 'admin') && (
+                      <IconButton 
+                        size="small"
+                        onClick={(e) => handleSheetMenuOpen(e, sheet)}
+                      >
+                        <MoreVertIcon />
+                      </IconButton>
+                    )}
                   </CardActions>
                 </Card>
               </Grid>
@@ -395,6 +506,28 @@ const Dashboard: React.FC = () => {
           <LogoutIcon sx={{ mr: 1 }} />
           Выйти
         </MenuItem>
+      </Menu>
+
+      {/* Sheet Actions Menu */}
+      <Menu
+        anchorEl={sheetMenuAnchor}
+        open={Boolean(sheetMenuAnchor)}
+        onClose={handleSheetMenuClose}
+      >
+        {/* Редактирование доступно создателю и админам */}
+        {(selectedSheet?.createdBy === user?.id || user?.role?.name === 'admin') && (
+          <MenuItem onClick={handleEditSheet}>
+            <EditIcon sx={{ mr: 1 }} />
+            Редактировать
+          </MenuItem>
+        )}
+        {/* Удаление доступно только создателю */}
+        {selectedSheet?.createdBy === user?.id && (
+          <MenuItem onClick={handleDeleteSheet} sx={{ color: 'error.main' }}>
+            <DeleteIcon sx={{ mr: 1 }} />
+            Удалить
+          </MenuItem>
+        )}
       </Menu>
 
       {/* Create Sheet Dialog */}
@@ -585,6 +718,77 @@ const Dashboard: React.FC = () => {
               {creating ? <CircularProgress size={20} /> : 'Создать из шаблона'}
             </Button>
           )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Sheet Dialog */}
+      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Редактировать таблицу</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+            <TextField
+              autoFocus
+              label="Название таблицы"
+              fullWidth
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+            />
+            <TextField
+              label="Описание"
+              fullWidth
+              multiline
+              rows={3}
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setEditDialogOpen(false);
+            setSelectedSheet(null);
+            setEditName('');
+            setEditDescription('');
+          }}>Отмена</Button>
+          <Button 
+            onClick={() => {
+              console.log('💾 Кнопка Сохранить нажата');
+              confirmEditSheet();
+            }} 
+            variant="contained"
+            disabled={!editName.trim()}
+          >
+            Сохранить
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Sheet Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+        <DialogTitle>Удалить таблицу</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Вы действительно хотите удалить таблицу "{selectedSheet?.name}"?
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Это действие нельзя отменить. Все данные таблицы будут потеряны.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setDeleteDialogOpen(false);
+            setSelectedSheet(null);
+          }}>Отмена</Button>
+          <Button 
+            onClick={() => {
+              console.log('🗑️ Кнопка Удалить нажата');
+              confirmDeleteSheet();
+            }} 
+            variant="contained" 
+            color="error"
+          >
+            Удалить
+          </Button>
         </DialogActions>
       </Dialog>
     </>

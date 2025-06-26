@@ -571,10 +571,10 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
     
     // Если ячейка содержит формулу, вычисляем и отображаем результат
     if (cell.formula && cell.formula.startsWith('=')) {
-      const engine = new FormulaEngine(cells);
+        const engine = new FormulaEngine(cells);
       const result = engine.evaluate(cell.formula);
       return result.toString();
-    }
+      }
     
     return cell.value || '';
   };
@@ -604,9 +604,9 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
       formula: formula || existingCell?.formula,
       format: existingCell?.format,
     };
-
+    
     const newCells = new Map(cells);
-    newCells.set(key, updatedCell);
+      newCells.set(key, updatedCell);
     setCells(newCells);
 
     // Автоматический расчет доплаты в журнале заселения
@@ -801,10 +801,10 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
         console.log('Значение изменилось, сохраняем');
       } else {
         console.log('Значение не изменилось, не сохраняем');
-      }
-      
-      setEditingCell(null);
-      setEditValue('');
+    }
+
+    setEditingCell(null);
+    setEditValue('');
     }
   };
 
@@ -1124,7 +1124,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
 
   const handleFormat = async (format: any) => {
     if (!selectedRange || userPermissions === 'read') return;
-
+    
     try {
       await cellsApi.formatCells(
         sheet.id,
@@ -1225,7 +1225,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
 
   const handleShowHistory = (row: number, column: number) => {
     setHistoryCell({ row, column });
-    setHistoryDialogOpen(true);
+      setHistoryDialogOpen(true);
   };
 
   const isInSelectedRange = useCallback((row: number, column: number): boolean => {
@@ -1410,7 +1410,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            {columnName}
+          {columnName}
             {needsSortButton && (
               <Tooltip title={`Сортировать по ${col === 1 ? 'дате заселения' : 'дате выселения'}`}>
                 <IconButton
@@ -1619,52 +1619,52 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
             const visibleRows = [];
             
             for (let row = startRow; row <= endRow; row++) {
-              const cells = [];
-              const rowHeight = getRowHeight(row);
-              
-              for (let col = 0; col < (sheet.columnCount || 26); col++) {
-                const isSelected = selectedCell?.row === row && selectedCell?.column === col;
-                const isEditing = editingCell?.row === row && editingCell?.column === col;
-                const isInRange = isInSelectedRange(row, col);
-                const isInClipboard = isInClipboardRange(row, col);
-                const cellFormat = getCellFormat(row, col);
-                const columnWidth = getColumnWidth(col);
-                
-                cells.push(
-                  <Cell
-                    key={`${row}-${col}`}
-                    row={row}
-                    column={col}
-                    value={getCellValue(row, col)}
-                    format={cellFormat}
-                    isSelected={isSelected}
-                    isInRange={isInRange}
-                    isInClipboard={isInClipboard}
-                    isEditing={isEditing}
-                    editValue={editValue}
-                    width={columnWidth}
-                    height={rowHeight}
-                    onEditValueChange={setEditValue}
-                    onClick={() => handleCellClick(row, col)}
+      const cells = [];
+      const rowHeight = getRowHeight(row);
+      
+      for (let col = 0; col < (sheet.columnCount || 26); col++) {
+        const isSelected = selectedCell?.row === row && selectedCell?.column === col;
+        const isEditing = editingCell?.row === row && editingCell?.column === col;
+        const isInRange = isInSelectedRange(row, col);
+        const isInClipboard = isInClipboardRange(row, col);
+        const cellFormat = getCellFormat(row, col);
+        const columnWidth = getColumnWidth(col);
+        
+        cells.push(
+          <Cell
+            key={`${row}-${col}`}
+            row={row}
+            column={col}
+            value={getCellValue(row, col)}
+            format={cellFormat}
+            isSelected={isSelected}
+            isInRange={isInRange}
+            isInClipboard={isInClipboard}
+            isEditing={isEditing}
+            editValue={editValue}
+            width={columnWidth}
+            height={rowHeight}
+            onEditValueChange={setEditValue}
+            onClick={() => handleCellClick(row, col)}
                     onMouseDown={() => handleCellMouseDown(row, col)}
                     onMouseEnter={() => handleCellMouseEnter(row, col)}
-                    onDoubleClick={() => handleCellDoubleClick(row, col)}
-                    onKeyDown={handleEditKeyDown}
-                    onBlur={handleEditBlur}
-                    readOnly={userPermissions === 'read'}
-                    sheetTitle={sheet.name || ''}
-                  />
-                );
-              }
-              
+            onDoubleClick={() => handleCellDoubleClick(row, col)}
+            onKeyDown={handleEditKeyDown}
+            onBlur={handleEditBlur}
+            readOnly={userPermissions === 'read'}
+            sheetTitle={sheet.name || ''}
+          />
+        );
+      }
+      
               visibleRows.push(
-                <Box key={row} sx={{ display: 'flex' }}>
-                  {renderRowHeader(row)}
-                  {cells}
-                </Box>
-              );
-            }
-            
+        <Box key={row} sx={{ display: 'flex' }}>
+          {renderRowHeader(row)}
+          {cells}
+        </Box>
+      );
+    }
+    
             return visibleRows;
           })()}
         </Box>
