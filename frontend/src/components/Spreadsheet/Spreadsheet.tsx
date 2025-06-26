@@ -18,6 +18,9 @@ import {
   Tooltip
 } from '@mui/material';
 import HistoryIcon from '@mui/icons-material/History';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import SortIcon from '@mui/icons-material/Sort';
 import { styled } from '@mui/material/styles';
 
 interface SpreadsheetProps {
@@ -57,6 +60,12 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
   const [historyCell, setHistoryCell] = useState<{ row: number; column: number } | null>(null);
   const [columnSizes, setColumnSizes] = useState<{ [key: number]: number }>({});
   const [rowSizes, setRowSizes] = useState<{ [key: number]: number }>({});
+  
+  // Состояние для сортировки
+  const [sortConfig, setSortConfig] = useState<{
+    column: number;
+    direction: 'asc' | 'desc';
+  } | null>(null);
   
   // Инициализация размеров из settings при загрузке таблицы
   useEffect(() => {
@@ -1250,11 +1259,135 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
     return result;
   };
 
+  // Проверяем, является ли таблица журналом заселения
+  const isJournalSheet = useMemo(() => {
+    return sheet?.name?.includes('Журнал заселения') || 
+           sheet?.template?.name?.includes('Журнал заселения');
+  }, [sheet?.name, sheet?.template?.name]);
+
+  // Функция сортировки данных
+  const sortCells = useCallback((column: number, direction: 'asc' | 'desc') => {
+    if (!isJournalSheet) return;
+
+    // Получаем все строки с данными (исключаем заголовок - строку 0)
+    const dataRows: { [row: number]: Map<number, CellData> } = {};
+    
+    // Группируем ячейки по строкам
+    for (let row = 1; row < (sheet.rowCount || 100); row++) {
+      const rowCells = new Map<number, CellData>();
+      let hasData = false;
+      
+      for (let col = 0; col < (sheet.columnCount || 26); col++) {
+        const key = getCellKey(row, col);
+        const cell = cells.get(key);
+        if (cell) {
+          rowCells.set(col, cell);
+          hasData = true;
+        }
+      }
+      
+      if (hasData) {
+        dataRows[row] = rowCells;
+      }
+    }
+
+    // Преобразуем данные в массив для сортировки
+    const rowsArray = Object.entries(dataRows).map(([rowStr, rowCells]) => ({
+      originalRow: parseInt(rowStr),
+      cells: rowCells
+    }));
+
+    // Сортируем строки по указанному столбцу
+    rowsArray.sort((a, b) => {
+      const aCellKey = getCellKey(a.originalRow, column);
+      const bCellKey = getCellKey(b.originalRow, column);
+      const aCell = cells.get(aCellKey);
+      const bCell = cells.get(bCellKey);
+      
+      let aValue = aCell?.value || '';
+      let bValue = bCell?.value || '';
+
+      // Специальная обработка для дат (столбцы 1 и 3)
+      if (column === 1 || column === 3) {
+        // Преобразуем даты из формата DD.MM.YYYY в Date объекты для сортировки
+        const parseDate = (dateStr: string): Date => {
+          if (!dateStr || typeof dateStr !== 'string') return new Date(0);
+          const match = dateStr.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+          if (match) {
+            const [, day, month, year] = match;
+            return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+          }
+          return new Date(0);
+        };
+
+        const aDate = parseDate(aValue);
+        const bDate = parseDate(bValue);
+        
+        const comparison = aDate.getTime() - bDate.getTime();
+        return direction === 'asc' ? comparison : -comparison;
+      }
+
+      // Обычная сортировка для других столбцов
+      if (direction === 'asc') {
+        return aValue.localeCompare(bValue, 'ru', { numeric: true });
+      } else {
+        return bValue.localeCompare(aValue, 'ru', { numeric: true });
+      }
+    });
+
+    // Создаем новую карту ячеек с пересортированными данными
+    const newCells = new Map(cells);
+    
+    // Очищаем данные в строках (кроме заголовка)
+    for (let row = 1; row < (sheet.rowCount || 100); row++) {
+      for (let col = 0; col < (sheet.columnCount || 26); col++) {
+        const key = getCellKey(row, col);
+        newCells.delete(key);
+      }
+    }
+
+    // Заполняем отсортированными данными
+    rowsArray.forEach((rowData, index) => {
+      const newRow = index + 1; // +1 потому что строка 0 - заголовки
+      
+      rowData.cells.forEach((cell, col) => {
+        const newKey = getCellKey(newRow, col);
+        newCells.set(newKey, {
+          ...cell,
+          row: newRow // Обновляем номер строки
+        });
+      });
+    });
+
+    setCells(newCells);
+    console.log(`🔄 Отсортировано по столбцу ${column} (${direction === 'asc' ? 'по возрастанию' : 'по убыванию'})`);
+  }, [cells, sheet, isJournalSheet]);
+
+  // Обработчик клика по кнопке сортировки
+  const handleSort = (column: number) => {
+    if (!isJournalSheet || (column !== 1 && column !== 3)) return;
+
+    let newDirection: 'asc' | 'desc' = 'asc';
+    
+    if (sortConfig?.column === column) {
+      // Переключаем направление сортировки
+      newDirection = sortConfig.direction === 'asc' ? 'desc' : 'asc';
+    }
+
+    setSortConfig({ column, direction: newDirection });
+    sortCells(column, newDirection);
+  };
+
   const renderColumnHeaders = () => {
     const headers = [];
     for (let col = 0; col < (sheet.columnCount || 26); col++) {
       const width = getColumnWidth(col);
       const columnName = generateColumnName(col); // Используем правильную генерацию названий
+      
+      // Проверяем, нужна ли кнопка сортировки для данного столбца
+      const needsSortButton = isJournalSheet && (col === 1 || col === 3);
+      const isSorted = sortConfig?.column === col;
+      const sortDirection = isSorted ? sortConfig.direction : null;
       
       headers.push(
         <Box
@@ -1276,7 +1409,34 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
             msUserSelect: 'none',
           }}
         >
-          {columnName}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            {columnName}
+            {needsSortButton && (
+              <Tooltip title={`Сортировать по ${col === 1 ? 'дате заселения' : 'дате выселения'}`}>
+                <IconButton
+                  size="small"
+                  onClick={() => handleSort(col)}
+                  sx={{
+                    padding: '2px',
+                    color: isSorted ? '#1976d2' : '#666',
+                    '&:hover': {
+                      backgroundColor: 'rgba(25, 118, 210, 0.1)',
+                    },
+                  }}
+                >
+                  {isSorted ? (
+                    sortDirection === 'asc' ? (
+                      <ArrowUpwardIcon sx={{ fontSize: 14 }} />
+                    ) : (
+                      <ArrowDownwardIcon sx={{ fontSize: 14 }} />
+                    )
+                  ) : (
+                    <SortIcon sx={{ fontSize: 14 }} />
+                  )}
+                </IconButton>
+              </Tooltip>
+            )}
+          </Box>
           {/* Разделитель для изменения размера */}
           <Box
             sx={{
