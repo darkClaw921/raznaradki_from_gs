@@ -546,6 +546,7 @@ const transformJournalToReport = async (journalCells: any[], reportSheetId: numb
     const houseStatus = row[9]?.value || ''; // Статус дома
     const source = row[10]?.value || ''; // Источник
     const comment = row[11]?.value || ''; // Комментарий по оплате и проживанию
+    const dayComments = row[12]?.value || ''; // Комментарии по оплате и проживанию в день заселения
 
     const isCheckout = convertToISO(checkoutDate) === reportDate;
     const isCheckin = convertToISO(checkinDate) === reportDate;
@@ -589,6 +590,9 @@ const transformJournalToReport = async (journalCells: any[], reportSheetId: numb
           addressGroups[uniqueKey].checkin.guestName += `, ${guestName}`;
           addressGroups[uniqueKey].checkin.phone += `, ${phone}`;
           addressGroups[uniqueKey].checkin.comment += `; ${comment}`;
+          if (dayComments) {
+            addressGroups[uniqueKey].checkin.dayComments += `; ${dayComments}`;
+          }
           // Для числовых полей берем первое значение или суммируем
           if (totalAmount && !isNaN(parseFloat(totalAmount.toString().replace(/\s/g, '')))) {
             const currentTotal = parseFloat(addressGroups[uniqueKey].checkin.totalAmount?.toString().replace(/\s/g, '') || '0');
@@ -604,7 +608,8 @@ const transformJournalToReport = async (journalCells: any[], reportSheetId: numb
             totalAmount,
             prepayment,
             additionalPayment,
-            comment
+            comment,
+            dayComments
           };
         }
       }
@@ -740,13 +745,19 @@ const transformJournalToReport = async (journalCells: any[], reportSheetId: numb
         {
           sheetId: reportSheetId,
           row: currentReportRow,
-          column: 15, // Комментарии по оплате и проживанию в день заселения
-          value: '' // Заполняется вручную
+          column: 15, // Примечания
+          value: ''
+        },
+        {
+          sheetId: reportSheetId,
+          row: currentReportRow,
+          column: 16, // Комментарии по оплате и проживанию в день заселения
+          value: group.checkin.dayComments || ''
         }
       );
     } else {
       // Пустые ячейки для заселения
-      for (let col = 6; col <= 15; col++) {
+      for (let col = 6; col <= 16; col++) {
         reportCells.push({
           sheetId: reportSheetId,
           row: currentReportRow,

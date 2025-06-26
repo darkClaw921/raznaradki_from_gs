@@ -226,7 +226,8 @@ JSON_OBJECT(
         JSON_OBJECT('row', 0, 'column', 8, 'value', 'Доплата за проживание в день заселения', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e3f2fd')),
         JSON_OBJECT('row', 0, 'column', 9, 'value', 'Статус дома', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e3f2fd')),
         JSON_OBJECT('row', 0, 'column', 10, 'value', 'Источник', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e3f2fd')),
-        JSON_OBJECT('row', 0, 'column', 11, 'value', 'Комментарий по оплате и проживанию', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e3f2fd'))
+        JSON_OBJECT('row', 0, 'column', 11, 'value', 'Комментарий по оплате и проживанию', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e3f2fd')),
+        JSON_OBJECT('row', 0, 'column', 12, 'value', 'Комментарии по оплате и проживанию в день заселения', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e3f2fd'))
     ),
     'sampleData', JSON_ARRAY(
         JSON_OBJECT('row', 1, 'column', 0, 'value', 'Январь 2025'),
@@ -241,6 +242,7 @@ JSON_OBJECT(
         JSON_OBJECT('row', 1, 'column', 9, 'value', 'Проживают'),
         JSON_OBJECT('row', 1, 'column', 10, 'value', 'Booking.com'),
         JSON_OBJECT('row', 1, 'column', 11, 'value', '100к/50п доплата 50.000 до 16 ГОСТЕЙ'),
+        JSON_OBJECT('row', 1, 'column', 12, 'value', 'Ключи переданы, документы проверены'),
         JSON_OBJECT('row', 2, 'column', 0, 'value', 'Январь 2025'),
         JSON_OBJECT('row', 2, 'column', 1, 'value', '03.01.2025'),
         JSON_OBJECT('row', 2, 'column', 2, 'value', '2'),
@@ -252,13 +254,14 @@ JSON_OBJECT(
         JSON_OBJECT('row', 2, 'column', 8, 'value', '40 000'),
         JSON_OBJECT('row', 2, 'column', 9, 'value', 'Выс/Зас'),
         JSON_OBJECT('row', 2, 'column', 10, 'value', 'Прямое обращение'),
-        JSON_OBJECT('row', 2, 'column', 11, 'value', '80к/40п доплата 40.000 до 12 ГОСТЕЙ')
+        JSON_OBJECT('row', 2, 'column', 11, 'value', '80к/40п доплата 40.000 до 12 ГОСТЕЙ'),
+        JSON_OBJECT('row', 2, 'column', 12, 'value', 'Требуется дополнительная уборка')
     ),
     'columnWidths', JSON_OBJECT(
         '0', 120, '1', 120, '2', 100, '3', 120, '4', 150, '5', 130, 
-        '6', 180, '7', 180, '8', 200, '9', 120, '10', 100, '11', 300
+        '6', 180, '7', 180, '8', 200, '9', 120, '10', 100, '11', 300, '12', 250
     )
-), 50, 12);
+), 50, 13);
 
 -- Вставка шаблона "Отчет заселения/выселения"
 INSERT INTO sheet_templates (name, description, category, structure, row_count, column_count) VALUES
@@ -283,7 +286,8 @@ JSON_OBJECT(
         JSON_OBJECT('row', 1, 'column', 12, 'value', 'Предоплата', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e8f5e8')),
         JSON_OBJECT('row', 1, 'column', 13, 'value', 'Доплата', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e8f5e8')),
         JSON_OBJECT('row', 1, 'column', 14, 'value', 'Комментарий', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e8f5e8')),
-        JSON_OBJECT('row', 1, 'column', 15, 'value', 'Примечания', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e8f5e8'))
+        JSON_OBJECT('row', 1, 'column', 15, 'value', 'Примечания', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e8f5e8')),
+        JSON_OBJECT('row', 1, 'column', 16, 'value', 'Комментарии по оплате и проживанию в день заселения', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e8f5e8'))
     ),
     'sampleData', JSON_ARRAY(
         JSON_OBJECT('row', 2, 'column', 0, 'value', 'Коттедж №1'),
@@ -301,11 +305,12 @@ JSON_OBJECT(
         JSON_OBJECT('row', 2, 'column', 12, 'value', '40 000'),
         JSON_OBJECT('row', 2, 'column', 13, 'value', '40 000'),
         JSON_OBJECT('row', 2, 'column', 14, 'value', '80к/40п доплата 40.000'),
-        JSON_OBJECT('row', 2, 'column', 15, 'value', 'До 12 гостей, собака допускается')
+        JSON_OBJECT('row', 2, 'column', 15, 'value', 'До 12 гостей, собака допускается'),
+        JSON_OBJECT('row', 2, 'column', 16, 'value', 'Ключи переданы, документы проверены')
     ),
     'columnWidths', JSON_OBJECT(
         '0', 120, '1', 120, '2', 150, '3', 130, '4', 200, '5', 120, 
         '6', 150, '7', 130, '8', 120, '9', 120, '10', 100, '11', 120, 
-        '12', 120, '13', 120, '14', 200, '15', 250
+        '12', 120, '13', 120, '14', 200, '15', 250, '16', 280
     )
-), 30, 16); 
+), 30, 17); 

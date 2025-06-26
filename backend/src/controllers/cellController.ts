@@ -1,6 +1,134 @@
 import { Request, Response } from 'express';
-import { Cell, Sheet, UserSheet, CellHistory, User } from '../models';
+import { Cell, Sheet, UserSheet, CellHistory, User, ReportSource, SheetTemplate } from '../models';
 import { updateLinkedReports } from './sheetTemplateController';
+
+// Обратная синхронизация изменений из отчета в журнал
+const handleReverseSync = async (sheetId: number, row: number, column: number, value: string, userId: number) => {
+  try {
+    // Проверяем, является ли это отчетом заселения/выселения и столбцом 16
+    const currentSheet = await Sheet.findByPk(sheetId);
+
+    if (!currentSheet) return;
+
+    // Проверяем, что это отчет заселения/выселения и изменяется столбец 16
+    const isReport = currentSheet.name?.includes('Отчет');
+    const isDayCommentsColumn = column === 16;
+
+    if (!isReport || !isDayCommentsColumn) return;
+
+    console.log(`🔄 Обратная синхронизация: отчет ${sheetId}, строка ${row}, столбец ${column}, значение "${value}"`);
+
+    // Получаем данные из текущей строки отчета для идентификации соответствующей записи в журнале
+    const reportRowCells = await Cell.findAll({
+      where: { sheetId, row },
+      order: [['column', 'ASC']]
+    });
+
+    // Извлекаем данные для поиска в журнале
+    let guestName = '';
+    let address = '';
+    
+    reportRowCells.forEach(cell => {
+      if (cell.column === 0) address = cell.value || ''; // Адрес (название журнала)
+      if (cell.column === 6) guestName = cell.value || ''; // ФИО заселяющегося
+    });
+
+    if (!guestName || !address) {
+      console.log(`⚠️ Недостаточно данных для обратной синхронизации: guestName="${guestName}", address="${address}"`);
+      return;
+    }
+
+    // Находим связанные журналы
+    const reportSources = await ReportSource.findAll({
+      where: { reportSheetId: sheetId },
+      include: [
+        {
+          model: Sheet,
+          as: 'sourceSheet',
+          attributes: ['id', 'name']
+        }
+      ]
+    });
+
+    // Ищем журнал по названию (адресу)
+    const matchingSource = reportSources.find(source => {
+      const sourceSheet = (source as any).sourceSheet;
+      return sourceSheet?.name === address;
+    });
+
+    if (!matchingSource) {
+      console.log(`⚠️ Не найден журнал с названием "${address}"`);
+      return;
+    }
+
+    const sourceSheetId = matchingSource.sourceSheetId;
+    console.log(`🔍 Найден журнал: ${address} (ID: ${sourceSheetId})`);
+
+    // Находим соответствующую строку в журнале по ФИО гостя
+    const journalCells = await Cell.findAll({
+      where: { 
+        sheetId: sourceSheetId,
+        column: 4, // Столбец ФИО в журнале
+        value: guestName
+      }
+    });
+
+    if (journalCells.length === 0) {
+      console.log(`⚠️ Не найдена запись с ФИО "${guestName}" в журнале ${sourceSheetId}`);
+      return;
+    }
+
+    // Обновляем столбец 12 (комментарии по оплате) в журнале для каждой найденной строки
+    for (const guestCell of journalCells) {
+      const journalRow = guestCell.row;
+      
+      // Находим или создаем ячейку в столбце 12 журнала
+      let dayCommentsCell = await Cell.findOne({
+        where: { 
+          sheetId: sourceSheetId, 
+          row: journalRow, 
+          column: 12 
+        }
+      });
+
+      if (dayCommentsCell) {
+        await dayCommentsCell.update({ value });
+        console.log(`✅ Обновлена ячейка журнала [${journalRow}, 12] в таблице ${sourceSheetId}: "${value}"`);
+      } else {
+        dayCommentsCell = await Cell.create({
+          sheetId: sourceSheetId,
+          row: journalRow,
+          column: 12,
+          value,
+          formula: null,
+          format: null,
+          isLocked: false
+        });
+        console.log(`✅ Создана ячейка журнала [${journalRow}, 12] в таблице ${sourceSheetId}: "${value}"`);
+      }
+
+      // Записываем в историю изменений журнала
+      await CellHistory.create({
+        cellId: dayCommentsCell.id,
+        sheetId: sourceSheetId,
+        row: journalRow,
+        column: 12,
+        oldValue: dayCommentsCell.value === value ? '' : dayCommentsCell.value,
+        newValue: value,
+        oldFormula: null,
+        newFormula: null,
+        oldFormat: null,
+        newFormat: null,
+        changedBy: userId,
+        changeType: 'value'
+      });
+    }
+
+  } catch (error) {
+    console.error('Ошибка в handleReverseSync:', error);
+    throw error;
+  }
+};
 
 // Обновление ячейки
 export const updateCell = async (req: Request, res: Response) => {
@@ -130,6 +258,14 @@ export const updateCell = async (req: Request, res: Response) => {
       oldFormat: oldFormat,
       newFormat: cell.format || {}
     });
+
+    // Обратная синхронизация для столбца 16 отчетов заселения
+    try {
+      await handleReverseSync(parseInt(sheetId), rowNum, colNum, value || '', userId);
+    } catch (error) {
+      console.error('Ошибка обратной синхронизации:', error);
+      // Не прерываем выполнение если ошибка в синхронизации
+    }
 
     // Обновляем связанные отчеты при изменении данных в журнале
     try {

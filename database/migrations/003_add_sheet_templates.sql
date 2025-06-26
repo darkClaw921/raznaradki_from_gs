@@ -42,7 +42,8 @@ JSON_OBJECT(
         JSON_OBJECT('row', 0, 'column', 8, 'value', 'Доплата за проживание в день заселения', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e3f2fd')),
         JSON_OBJECT('row', 0, 'column', 9, 'value', 'Статус дома', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e3f2fd')),
         JSON_OBJECT('row', 0, 'column', 10, 'value', 'Источник', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e3f2fd')),
-        JSON_OBJECT('row', 0, 'column', 11, 'value', 'Комментарий по оплате и проживанию', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e3f2fd'))
+        JSON_OBJECT('row', 0, 'column', 11, 'value', 'Комментарий по оплате и проживанию', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e3f2fd')),
+        JSON_OBJECT('row', 0, 'column', 12, 'value', 'Комментарии по оплате и проживанию в день заселения', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e3f2fd'))
     ),
     'sampleData', JSON_ARRAY(
         JSON_OBJECT('row', 1, 'column', 0, 'value', 'Январь 2025'),
@@ -57,6 +58,7 @@ JSON_OBJECT(
         JSON_OBJECT('row', 1, 'column', 9, 'value', 'Проживают'),
         JSON_OBJECT('row', 1, 'column', 10, 'value', ''),
         JSON_OBJECT('row', 1, 'column', 11, 'value', '280к/140п (21.10. в 11:33) доплата 140.000 до 16 ГОСТЕЙ'),
+        JSON_OBJECT('row', 1, 'column', 12, 'value', 'Ключи переданы, документы проверены'),
         JSON_OBJECT('row', 2, 'column', 0, 'value', 'Январь 2025'),
         JSON_OBJECT('row', 2, 'column', 1, 'value', '02.01.2025'),
         JSON_OBJECT('row', 2, 'column', 2, 'value', '-45 659,00'),
@@ -69,6 +71,7 @@ JSON_OBJECT(
         JSON_OBJECT('row', 2, 'column', 9, 'value', 'Проживают'),
         JSON_OBJECT('row', 2, 'column', 10, 'value', ''),
         JSON_OBJECT('row', 2, 'column', 11, 'value', ''),
+        JSON_OBJECT('row', 2, 'column', 12, 'value', ''),
         JSON_OBJECT('row', 3, 'column', 0, 'value', 'Январь 2025'),
         JSON_OBJECT('row', 3, 'column', 1, 'value', '03.01.2025'),
         JSON_OBJECT('row', 3, 'column', 2, 'value', '2,00'),
@@ -81,6 +84,7 @@ JSON_OBJECT(
         JSON_OBJECT('row', 3, 'column', 9, 'value', 'Выс/Зас'),
         JSON_OBJECT('row', 3, 'column', 10, 'value', ''),
         JSON_OBJECT('row', 3, 'column', 11, 'value', '100к/50п (10.11 в 11:13) доплата 50.000 до 16 ГОСТЕЙ'),
+        JSON_OBJECT('row', 3, 'column', 12, 'value', 'Требуется дополнительная уборка'),
         JSON_OBJECT('row', 4, 'column', 0, 'value', 'Январь 2025'),
         JSON_OBJECT('row', 4, 'column', 1, 'value', '04.01.2025'),
         JSON_OBJECT('row', 4, 'column', 2, 'value', '-45 661,00'),
@@ -93,6 +97,7 @@ JSON_OBJECT(
         JSON_OBJECT('row', 4, 'column', 9, 'value', 'Проживают'),
         JSON_OBJECT('row', 4, 'column', 10, 'value', ''),
         JSON_OBJECT('row', 4, 'column', 11, 'value', ''),
+        JSON_OBJECT('row', 4, 'column', 12, 'value', ''),
         JSON_OBJECT('row', 5, 'column', 0, 'value', 'Январь 2025'),
         JSON_OBJECT('row', 5, 'column', 1, 'value', '05.01.2025'),
         JSON_OBJECT('row', 5, 'column', 2, 'value', '1,00'),
@@ -105,6 +110,7 @@ JSON_OBJECT(
         JSON_OBJECT('row', 5, 'column', 9, 'value', 'Выс/Зас'),
         JSON_OBJECT('row', 5, 'column', 10, 'value', ''),
         JSON_OBJECT('row', 5, 'column', 11, 'value', '50К/25П( 13.12 в 13:45) доплата 25.000р. до 16 гостей.'),
+        JSON_OBJECT('row', 5, 'column', 12, 'value', 'Проверить санузел после уборки'),
         JSON_OBJECT('row', 6, 'column', 0, 'value', 'Январь 2025'),
         JSON_OBJECT('row', 6, 'column', 1, 'value', '06.01.2025'),
         JSON_OBJECT('row', 6, 'column', 2, 'value', '2,00'),
@@ -117,6 +123,7 @@ JSON_OBJECT(
         JSON_OBJECT('row', 6, 'column', 9, 'value', 'Выс/Зас'),
         JSON_OBJECT('row', 6, 'column', 10, 'value', ''),
         JSON_OBJECT('row', 6, 'column', 11, 'value', '100к/50п (10.12. в 16:40) доплата 50.000 до 16чел.\nСпа-зона, собака, возможно еще баня'),
+        JSON_OBJECT('row', 6, 'column', 12, 'value', 'Подготовить спа-зону и место для собаки'),
         JSON_OBJECT('row', 7, 'column', 0, 'value', 'Январь 2025'),
         JSON_OBJECT('row', 7, 'column', 1, 'value', '07.01.2025'),
         JSON_OBJECT('row', 7, 'column', 2, 'value', '-45 664,00'),
@@ -129,6 +136,7 @@ JSON_OBJECT(
         JSON_OBJECT('row', 7, 'column', 9, 'value', 'Проживают'),
         JSON_OBJECT('row', 7, 'column', 10, 'value', ''),
         JSON_OBJECT('row', 7, 'column', 11, 'value', ''),
+        JSON_OBJECT('row', 7, 'column', 12, 'value', ''),
         JSON_OBJECT('row', 8, 'column', 0, 'value', 'Январь 2025'),
         JSON_OBJECT('row', 8, 'column', 1, 'value', '08.01.2025'),
         JSON_OBJECT('row', 8, 'column', 2, 'value', '1,00'),
@@ -140,13 +148,14 @@ JSON_OBJECT(
         JSON_OBJECT('row', 8, 'column', 8, 'value', '12 000,00'),
         JSON_OBJECT('row', 8, 'column', 9, 'value', 'Выс/Зас'),
         JSON_OBJECT('row', 8, 'column', 10, 'value', ''),
-        JSON_OBJECT('row', 8, 'column', 11, 'value', '2 гостей')
+        JSON_OBJECT('row', 8, 'column', 11, 'value', '2 гостей'),
+        JSON_OBJECT('row', 8, 'column', 12, 'value', 'Небольшая компания, минимум удобств')
     ),
     'columnWidths', JSON_OBJECT(
         '0', 120, '1', 120, '2', 100, '3', 120, '4', 150, '5', 130, 
-        '6', 180, '7', 180, '8', 200, '9', 120, '10', 100, '11', 300
+        '6', 180, '7', 180, '8', 200, '9', 120, '10', 100, '11', 300, '12', 250
     )
-), 50, 12);
+), 50, 13);
 
 -- Вставка шаблона "Отчет заселения/выселения"
 INSERT INTO sheet_templates (name, description, category, structure, row_count, column_count) VALUES
@@ -171,7 +180,8 @@ JSON_OBJECT(
         JSON_OBJECT('row', 1, 'column', 12, 'value', 'Предоплата (сумма аванса)', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e8f5e8')),
         JSON_OBJECT('row', 1, 'column', 13, 'value', 'Доплата\nза проживание\nв день заселения', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e8f5e8')),
         JSON_OBJECT('row', 1, 'column', 14, 'value', 'Комментарий из журнала заселения', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e8f5e8')),
-        JSON_OBJECT('row', 1, 'column', 15, 'value', 'Комментарии по оплате и проживанию в день заселения', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e8f5e8'))
+        JSON_OBJECT('row', 1, 'column', 15, 'value', 'Комментарии по оплате и проживанию в день заселения', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e8f5e8')),
+        JSON_OBJECT('row', 1, 'column', 16, 'value', 'Комментарии по оплате и проживанию в день заселения', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e8f5e8'))
     ),
     'sampleData', JSON_ARRAY(
         JSON_OBJECT('row', 2, 'column', 0, 'value', '29'),
@@ -189,11 +199,12 @@ JSON_OBJECT(
         JSON_OBJECT('row', 2, 'column', 12, 'value', '4 550,00'),
         JSON_OBJECT('row', 2, 'column', 13, 'value', '6 500,00'),
         JSON_OBJECT('row', 2, 'column', 14, 'value', '6 гостей  будет собачка ( до 4 кг.)'),
-        JSON_OBJECT('row', 2, 'column', 15, 'value', 'забронировали ВРЕМЯ бани 30.03.25 на два  часа с  с 17:00 до 19:00  ( допл. 6.500+ 3.000 баня + 3.000 собака + 12.000 залог  Надежда НАЛ.)')
+        JSON_OBJECT('row', 2, 'column', 15, 'value', 'забронировали ВРЕМЯ бани 30.03.25 на два  часа с  с 17:00 до 19:00  ( допл. 6.500+ 3.000 баня + 3.000 собака + 12.000 залог  Надежда НАЛ.)'),
+        JSON_OBJECT('row', 2, 'column', 16, 'value', 'Ключи переданы, документы проверены')
     ),
     'columnWidths', JSON_OBJECT(
         '0', 80, '1', 120, '2', 150, '3', 130, '4', 250, '5', 120, 
         '6', 150, '7', 130, '8', 120, '9', 120, '10', 100, '11', 150, 
-        '12', 150, '13', 180, '14', 250, '15', 300
+        '12', 150, '13', 180, '14', 250, '15', 300, '16', 280
     )
-), 30, 16); 
+), 30, 17); 
