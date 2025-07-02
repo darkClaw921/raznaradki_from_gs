@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Op } from 'sequelize';
 import { WebhookMapping, Sheet, Cell, SystemSettings } from '../models';
 
 // Получение настроек webhook для таблицы
@@ -258,7 +259,7 @@ async function addBookingToSheet(sheet: any, bookingData: any) {
       const lastCells = await Cell.findAll({
         where: { 
           sheetId: sheet.id,
-          value: { [require('sequelize').Op.ne]: '' } // Исключаем пустые ячейки
+          value: { [Op.ne]: '' } // Исключаем пустые ячейки
         },
         order: [['row', 'DESC']],
         limit: 1

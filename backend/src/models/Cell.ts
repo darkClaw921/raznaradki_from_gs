@@ -32,12 +32,6 @@ class Cell extends Model<CellAttributes, CellCreationAttributes> implements Cell
   public bookingId?: number;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
-
-  // Виртуальное поле для адреса ячейки (например: A1, B2)
-  public get address(): string {
-    const columnLetter = String.fromCharCode(65 + this.column); // A, B, C...
-    return `${columnLetter}${this.row + 1}`;
-  }
 }
 
 export const CellFactory = (sequelize: Sequelize) => {
@@ -88,10 +82,9 @@ export const CellFactory = (sequelize: Sequelize) => {
         field: 'is_locked',
       },
       mergedWith: {
-        type: DataTypes.STRING(10),
+        type: DataTypes.STRING,
         allowNull: true,
-        field: 'merged_with',
-        comment: 'Адрес главной ячейки при объединении',
+        comment: 'Ссылка на ячейку, с которой объединена текущая (формат: row-column)',
       },
       bookingId: {
         type: DataTypes.BIGINT,
@@ -108,15 +101,15 @@ export const CellFactory = (sequelize: Sequelize) => {
       underscored: true,
       indexes: [
         {
-          fields: ['sheet_id', 'row', 'column'],
           unique: true,
-        },
-        {
-          fields: ['sheet_id'],
-        },
-      ],
+          fields: ['sheet_id', 'row', 'column'],
+          name: 'unique_cell_position'
+        }
+      ]
     }
   );
 
   return Cell;
-}; 
+};
+
+export default Cell; 

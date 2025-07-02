@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Op } from 'sequelize';
 import { SheetTemplate, Sheet, UserSheet, Cell, ReportSource } from '../models';
 
 // Получение списка всех шаблонов
@@ -140,6 +141,95 @@ export const createSheetFromTemplate = async (req: Request, res: Response) => {
       }
     }
 
+    // Добавляем стандартные границы для шаблона "Отчет заселения/выселения"
+    if (template.name?.includes('Отчет заселения/выселения')) {
+      console.log('🎨 Добавление стандартных границ для отчета заселения/выселения');
+      
+      // Жирная левая граница для столбца C (2) - начало секции "Выселение"
+      // Жирная левая граница для столбца G (6) - начало секции "Заселение"
+      const standardBorder = {
+        style: 'solid',
+        width: 1,
+        color: '#e0e0e0'
+      };
+      
+      const thickLeftBorder = {
+        style: 'solid',
+        width: 2,
+        color: '#000000'
+      };
+
+      // Применяем границы ко всем строкам столбцов C и G
+      const maxRows = template.rowCount || 30;
+      for (let row = 0; row < maxRows; row++) {
+        // Проверяем существуют ли уже ячейки в столбцах C (2) и G (6)
+        const existingCellC = cellsToCreate.find(cell => cell.row === row && cell.column === 2);
+        const existingCellG = cellsToCreate.find(cell => cell.row === row && cell.column === 6);
+        
+        // Столбец C (2) - левая граница для секции "Выселение"
+        if (existingCellC) {
+          // Объединяем форматирование с существующей ячейкой
+          existingCellC.format = {
+            ...existingCellC.format,
+            borders: {
+              top: standardBorder,
+              right: standardBorder,
+              bottom: standardBorder,
+              left: thickLeftBorder, // Жирная левая граница
+              ...existingCellC.format?.borders
+            }
+          };
+        } else {
+          // Создаем новую ячейку с границами
+          cellsToCreate.push({
+            sheetId: sheet.id,
+            row: row,
+            column: 2,
+            value: '',
+            format: { 
+              borders: {
+                top: standardBorder,
+                right: standardBorder,
+                bottom: standardBorder,
+                left: thickLeftBorder // Жирная левая граница
+              }
+            }
+          });
+        }
+        
+        // Столбец G (6) - левая граница для секции "Заселение"
+        if (existingCellG) {
+          // Объединяем форматирование с существующей ячейкой
+          existingCellG.format = {
+            ...existingCellG.format,
+            borders: {
+              top: standardBorder,
+              right: standardBorder,
+              bottom: standardBorder,
+              left: thickLeftBorder, // Жирная левая граница
+              ...existingCellG.format?.borders
+            }
+          };
+        } else {
+          // Создаем новую ячейку с границами
+          cellsToCreate.push({
+            sheetId: sheet.id,
+            row: row,
+            column: 6,
+            value: '',
+            format: { 
+              borders: {
+                top: standardBorder,
+                right: standardBorder,
+                bottom: standardBorder,
+                left: thickLeftBorder // Жирная левая граница
+              }
+            }
+          });
+        }
+      }
+    }
+
     // Добавляем примеры данных только если не связанная таблица
     if (!sourceSheetId && structure.sampleData && Array.isArray(structure.sampleData)) {
       for (const sample of structure.sampleData) {
@@ -261,17 +351,62 @@ export const syncLinkedSheetDataFromMultipleSources = async (reportSheetId: numb
     // Преобразуем все данные в формат отчета
     const reportCells = await transformJournalToReport(allFilteredData, reportSheetId, reportDate);
 
+    // Сохраняем форматирование столбцов перед очисткой данных
+    const columnFormats: any = {};
+    
+    // Получаем все ячейки с форматированием столбцов (только где есть format и нет конкретного значения или значение пустое)
+    const existingFormattedCells = await Cell.findAll({
+      where: {
+        sheetId: reportSheetId,
+        format: { [Op.ne]: null }
+      }
+    });
+
+    // Сохраняем форматирование столбцов (ячейки без значения или с заголовками)
+    existingFormattedCells.forEach(cell => {
+      if (cell.row <= 1 || !cell.value || cell.value === '') {
+        const key = `${cell.row}-${cell.column}`;
+        columnFormats[key] = {
+          row: cell.row,
+          column: cell.column,
+          format: cell.format,
+          value: cell.value || '',
+          isLocked: cell.isLocked
+        };
+      }
+    });
+
     // Очищаем старые данные отчета (кроме заголовков - строки 0 и 1)
     await Cell.destroy({
       where: {
         sheetId: reportSheetId,
-        row: { [require('sequelize').Op.gt]: 1 } // Удаляем все кроме строк заголовков
+        row: { [Op.gt]: 1 } // Удаляем все кроме строк заголовков
       }
     });
 
-    // Обновляем дату отчета в ячейке B1 (row=0, column=1)
+    // Восстанавливаем форматирование столбцов
+    const cellsToRestore = [];
+    Object.values(columnFormats).forEach((cellData: any) => {
+      if (cellData.row > 1) { // Только для ячеек форматирования столбцов
+        cellsToRestore.push({
+          sheetId: reportSheetId,
+          row: cellData.row,
+          column: cellData.column,
+          value: cellData.value,
+          format: cellData.format,
+          isLocked: cellData.isLocked || false
+        });
+      }
+    });
+
+    if (cellsToRestore.length > 0) {
+      await Cell.bulkCreate(cellsToRestore);
+      console.log(`🎨 Восстановлено ${cellsToRestore.length} ячеек с форматированием столбцов`);
+    }
+
+    // Обновляем дату отчета в ячейке A1 (row=0, column=0)
     const reportDateCell = await Cell.findOne({
-      where: { sheetId: reportSheetId, row: 0, column: 1 }
+      where: { sheetId: reportSheetId, row: 0, column: 0 }
     });
 
     if (reportDateCell) {
@@ -280,7 +415,7 @@ export const syncLinkedSheetDataFromMultipleSources = async (reportSheetId: numb
       await Cell.create({
         sheetId: reportSheetId,
         row: 0,
-        column: 1,
+        column: 0,
         value: reportDate,
         format: { fontWeight: 'bold', fontSize: '16px', textAlign: 'center' }
       });
@@ -288,7 +423,17 @@ export const syncLinkedSheetDataFromMultipleSources = async (reportSheetId: numb
 
     // Создаем новые ячейки отчета
     if (reportCells.length > 0) {
-      await Cell.bulkCreate(reportCells);
+      // Преобразуем массив ячеек для upsert
+      const cellsForUpsert = reportCells.map(cell => ({
+        ...cell,
+        uniqueKey: `${cell.sheetId}-${cell.row}-${cell.column}`
+      }));
+
+      // Используем bulkCreate с опцией updateOnDuplicate
+      await Cell.bulkCreate(cellsForUpsert, {
+        updateOnDuplicate: ['value', 'formula', 'format', 'isLocked', 'updatedAt'],
+        fields: ['sheetId', 'row', 'column', 'value', 'formula', 'format', 'isLocked'],
+      });
     }
 
     // Обновляем поле reportDate в модели Sheet
@@ -331,17 +476,62 @@ export const syncLinkedSheetData = async (reportSheetId: number, sourceSheetId: 
     // Преобразуем данные в формат отчета
     const reportCells = await transformJournalToReport(filteredData, reportSheetId, reportDate);
 
+    // Сохраняем форматирование столбцов перед очисткой данных
+    const columnFormats: any = {};
+    
+    // Получаем все ячейки с форматированием столбцов (только где есть format и нет конкретного значения или значение пустое)
+    const existingFormattedCells = await Cell.findAll({
+      where: {
+        sheetId: reportSheetId,
+        format: { [Op.ne]: null }
+      }
+    });
+
+    // Сохраняем форматирование столбцов (ячейки без значения или с заголовками)
+    existingFormattedCells.forEach(cell => {
+      if (cell.row <= 1 || !cell.value || cell.value === '') {
+        const key = `${cell.row}-${cell.column}`;
+        columnFormats[key] = {
+          row: cell.row,
+          column: cell.column,
+          format: cell.format,
+          value: cell.value || '',
+          isLocked: cell.isLocked
+        };
+      }
+    });
+
     // Очищаем старые данные отчета (кроме заголовков - строки 0 и 1)
     await Cell.destroy({
       where: {
         sheetId: reportSheetId,
-        row: { [require('sequelize').Op.gt]: 1 } // Удаляем все кроме строк заголовков
+        row: { [Op.gt]: 1 } // Удаляем все кроме строк заголовков
       }
     });
 
-    // Обновляем дату отчета в ячейке B1 (row=0, column=1)
+    // Восстанавливаем форматирование столбцов
+    const cellsToRestore = [];
+    Object.values(columnFormats).forEach((cellData: any) => {
+      if (cellData.row > 1) { // Только для ячеек форматирования столбцов
+        cellsToRestore.push({
+          sheetId: reportSheetId,
+          row: cellData.row,
+          column: cellData.column,
+          value: cellData.value,
+          format: cellData.format,
+          isLocked: cellData.isLocked || false
+        });
+      }
+    });
+
+    if (cellsToRestore.length > 0) {
+      await Cell.bulkCreate(cellsToRestore);
+      console.log(`🎨 Восстановлено ${cellsToRestore.length} ячеек с форматированием столбцов`);
+    }
+
+    // Обновляем дату отчета в ячейке A1 (row=0, column=0)
     const reportDateCell = await Cell.findOne({
-      where: { sheetId: reportSheetId, row: 0, column: 1 }
+      where: { sheetId: reportSheetId, row: 0, column: 0 }
     });
 
     if (reportDateCell) {
@@ -350,7 +540,7 @@ export const syncLinkedSheetData = async (reportSheetId: number, sourceSheetId: 
       await Cell.create({
         sheetId: reportSheetId,
         row: 0,
-        column: 1,
+        column: 0,
         value: reportDate,
         format: { fontWeight: 'bold', fontSize: '16px', textAlign: 'center' }
       });
@@ -358,7 +548,17 @@ export const syncLinkedSheetData = async (reportSheetId: number, sourceSheetId: 
 
     // Создаем новые ячейки отчета
     if (reportCells.length > 0) {
-      await Cell.bulkCreate(reportCells);
+      // Преобразуем массив ячеек для upsert
+      const cellsForUpsert = reportCells.map(cell => ({
+        ...cell,
+        uniqueKey: `${cell.sheetId}-${cell.row}-${cell.column}`
+      }));
+
+      // Используем bulkCreate с опцией updateOnDuplicate
+      await Cell.bulkCreate(cellsForUpsert, {
+        updateOnDuplicate: ['value', 'formula', 'format', 'isLocked', 'updatedAt'],
+        fields: ['sheetId', 'row', 'column', 'value', 'formula', 'format', 'isLocked'],
+      });
     }
 
     // Обновляем поле reportDate в модели Sheet

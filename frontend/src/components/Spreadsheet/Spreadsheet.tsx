@@ -22,10 +22,14 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import SortIcon from '@mui/icons-material/Sort';
 import { styled } from '@mui/material/styles';
+// @ts-ignore
+import * as XLSX from 'xlsx';
+import { Button, Stack } from '@mui/material';
 
 interface SpreadsheetProps {
   sheet: any;
   userPermissions: string;
+  reportDate?: string;
 }
 
 interface CellData {
@@ -48,7 +52,7 @@ const ROW_HEIGHT_DEFAULT = 30;
 const HEADER_HEIGHT = 30;
 const BUFFER_SIZE = 5; // Количество строк выше и ниже видимой области
 
-const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => {
+const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, reportDate }) => {
   const [cells, setCells] = useState<Map<string, CellData>>(new Map());
   const [selectedCell, setSelectedCell] = useState<{ row: number; column: number } | null>(null);
   const [selectedRange, setSelectedRange] = useState<CellSelection | null>(null);
@@ -1619,52 +1623,54 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
             const visibleRows = [];
             
             for (let row = startRow; row <= endRow; row++) {
-      const cells = [];
-      const rowHeight = getRowHeight(row);
+              // Пропускаем строку 0 для отчетов (шапка)
+              if (sheet?.template?.name?.includes('Отчет') && row === 0) continue;
+              const cells = [];
+              const rowHeight = getRowHeight(row);
       
-      for (let col = 0; col < (sheet.columnCount || 26); col++) {
-        const isSelected = selectedCell?.row === row && selectedCell?.column === col;
-        const isEditing = editingCell?.row === row && editingCell?.column === col;
-        const isInRange = isInSelectedRange(row, col);
-        const isInClipboard = isInClipboardRange(row, col);
-        const cellFormat = getCellFormat(row, col);
-        const columnWidth = getColumnWidth(col);
-        
-        cells.push(
-          <Cell
-            key={`${row}-${col}`}
-            row={row}
-            column={col}
-            value={getCellValue(row, col)}
-            format={cellFormat}
-            isSelected={isSelected}
-            isInRange={isInRange}
-            isInClipboard={isInClipboard}
-            isEditing={isEditing}
-            editValue={editValue}
-            width={columnWidth}
-            height={rowHeight}
-            onEditValueChange={setEditValue}
-            onClick={() => handleCellClick(row, col)}
+              for (let col = 0; col < (sheet.columnCount || 26); col++) {
+                const isSelected = selectedCell?.row === row && selectedCell?.column === col;
+                const isEditing = editingCell?.row === row && editingCell?.column === col;
+                const isInRange = isInSelectedRange(row, col);
+                const isInClipboard = isInClipboardRange(row, col);
+                const cellFormat = getCellFormat(row, col);
+                const columnWidth = getColumnWidth(col);
+                
+                cells.push(
+                  <Cell
+                    key={`${row}-${col}`}
+                    row={row}
+                    column={col}
+                    value={getCellValue(row, col)}
+                    format={cellFormat}
+                    isSelected={isSelected}
+                    isInRange={isInRange}
+                    isInClipboard={isInClipboard}
+                    isEditing={isEditing}
+                    editValue={editValue}
+                    width={columnWidth}
+                    height={rowHeight}
+                    onEditValueChange={setEditValue}
+                    onClick={() => handleCellClick(row, col)}
                     onMouseDown={() => handleCellMouseDown(row, col)}
                     onMouseEnter={() => handleCellMouseEnter(row, col)}
-            onDoubleClick={() => handleCellDoubleClick(row, col)}
-            onKeyDown={handleEditKeyDown}
-            onBlur={handleEditBlur}
-            readOnly={userPermissions === 'read'}
-            sheetTitle={sheet.name || ''}
-          />
-        );
-      }
+                    onDoubleClick={() => handleCellDoubleClick(row, col)}
+                    onKeyDown={handleEditKeyDown}
+                    onBlur={handleEditBlur}
+                    readOnly={userPermissions === 'read'}
+                    sheetTitle={sheet.name || ''}
+                  />
+                );
+              }
       
               visibleRows.push(
-        <Box key={row} sx={{ display: 'flex' }}>
-          {renderRowHeader(row)}
-          {cells}
-        </Box>
-      );
-    }
-    
+                <Box key={row} sx={{ display: 'flex' }}>
+                  {renderRowHeader(row)}
+                  {cells}
+                </Box>
+              );
+            }
+            
             return visibleRows;
           })()}
         </Box>
@@ -1683,6 +1689,104 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
     };
   }, [debouncedSaveCell, debouncedUpdateSelection, debouncedScrollUpdate]);
 
+  const isReportSheet = useMemo(() => {
+    return sheet?.name?.toLowerCase().includes('отчет') ||
+           sheet?.template?.name?.toLowerCase().includes('отчет');
+  }, [sheet?.name, sheet?.template?.name]);
+
+  // Функция для экспорта в Excel
+  const handleExportExcel = () => {
+    // Собираем данные в массив массивов (AOA)
+    const data: any[][] = [];
+    for (let row = 0; row < (sheet.rowCount || 100); row++) {
+      const rowData: any[] = [];
+      for (let col = 0; col < (sheet.columnCount || 26); col++) {
+        rowData.push(getCellValue(row, col));
+      }
+      data.push(rowData);
+    }
+    // Формируем корректное имя листа (до 31 символа, без недопустимых символов)
+    let safeSheetName = (sheet.name || 'Report')
+      .replace(/[\\/?*\[\]:]/g, '')
+      .slice(0, 31)
+      .trim();
+    if (!safeSheetName) safeSheetName = 'Report';
+    const ws = XLSX.utils.aoa_to_sheet(data);
+
+    // --- Сбор merges для объединённых ячеек ---
+    const merges: any[] = [];
+    if (sheet.cells) {
+      const visited = new Set();
+      for (const cell of sheet.cells) {
+        if (cell.mergedWith && !visited.has(`${cell.row}-${cell.column}`)) {
+          // mergedWith = "row-col" (например, "0-0")
+          const [startRow, startCol] = cell.mergedWith.split('-').map(Number);
+          const endRow = cell.row;
+          const endCol = cell.column;
+          merges.push({ s: { r: startRow, c: startCol }, e: { r: endRow, c: endCol } });
+          // Помечаем все ячейки диапазона как обработанные
+          for (let r = startRow; r <= endRow; r++) {
+            for (let c = startCol; c <= endCol; c++) {
+              visited.add(`${r}-${c}`);
+            }
+          }
+        }
+      }
+    }
+    // --- Явные merges для шапки отчета ---
+    if (sheet?.template?.name?.includes('Отчет')) {
+      merges.push(
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }, // A1:B1 Дата
+        { s: { r: 0, c: 2 }, e: { r: 0, c: 5 } }, // C1:F1 Выселение
+        { s: { r: 0, c: 6 }, e: { r: 0, c: 16 } } // G1:Q1 Заселение
+      );
+    }
+    if (merges.length > 0) {
+      ws['!merges'] = merges;
+    }
+    // --- конец блока merges ---
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
+    XLSX.writeFile(wb, `${safeSheetName}.xlsx`);
+
+    // --- Устанавливаем дату отчета в A1 (data[0][0]) ---
+    if (sheet?.template?.name?.includes('Отчет')) {
+      if (data[0]) {
+        // Форматируем дату как в интерфейсе (DD.MM.YYYY)
+        let reportDateStr = '';
+        if (sheet.reportDate) {
+          const parts = sheet.reportDate.split('-');
+          if (parts.length === 3) reportDateStr = `${parts[2]}.${parts[1]}.${parts[0]}`;
+          else reportDateStr = sheet.reportDate;
+        }
+        data[0][0] = reportDateStr;
+        data[0][1] = '';
+      }
+    }
+  };
+
+  // Функция для экспорта в CSV
+  const handleExportCSV = () => {
+    const data: any[][] = [];
+    for (let row = 0; row < (sheet.rowCount || 100); row++) {
+      const rowData: any[] = [];
+      for (let col = 0; col < (sheet.columnCount || 26); col++) {
+        rowData.push(getCellValue(row, col));
+      }
+      data.push(rowData);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const csv = XLSX.utils.sheet_to_csv(ws, { FS: ';' });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', `${sheet.name || 'report'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Панель инструментов */}
@@ -1694,6 +1798,14 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
         onShowHistory={handleShowHistory}
         userPermissions={userPermissions}
       />
+
+      {/* Кнопки экспорта только для отчетов */}
+      {isReportSheet && (
+        <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+          <Button variant="outlined" onClick={handleExportExcel}>Экспорт в Excel</Button>
+          <Button variant="outlined" onClick={handleExportCSV}>Экспорт в CSV</Button>
+        </Stack>
+      )}
 
       {/* Таблица */}
       <Paper 
@@ -1736,7 +1848,63 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions }) => 
             <Box sx={{ width: 50, height: 30 }} /> {/* Corner cell */}
             {renderColumnHeaders()}
           </Box>
-          
+          {/* Кастомная шапка для отчетов */}
+          {sheet?.template?.name?.includes('Отчет') && (
+            <Box sx={{ display: 'flex', position: 'sticky', top: 30, zIndex: 1 }}>
+              <Box sx={{ width: 50, height: 30 }} />
+              {/* A1:B1 - только дата */}
+              <Box
+                sx={{
+                  width: (getColumnWidth(0) + getColumnWidth(1)),
+                  height: 30,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: '#f5f5f5',
+                  border: '1px solid #e0e0e0',
+                  fontWeight: 'bold',
+                  fontSize: '0.95rem',
+                  textAlign: 'center',
+                }}
+              >
+                {reportDate ? reportDate.split('-').reverse().join('.') : ''}
+              </Box>
+              {/* C1:F1 - Выселение */}
+              <Box
+                sx={{
+                  width: [2,3,4,5].reduce((acc, col) => acc + getColumnWidth(col), 0),
+                  height: 30,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: '#f5f5f5',
+                  border: '1px solid #e0e0e0',
+                  fontWeight: 'bold',
+                  fontSize: '0.95rem',
+                  textAlign: 'center',
+                }}
+              >
+                Выселение
+              </Box>
+              {/* G1:Q1 (6-16) - Заселение */}
+              <Box
+                sx={{
+                  width: Array.from({length: 11}, (_, i) => getColumnWidth(i+6)).reduce((a,b)=>a+b,0),
+                  height: 30,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: '#f5f5f5',
+                  border: '1px solid #e0e0e0',
+                  fontWeight: 'bold',
+                  fontSize: '0.95rem',
+                  textAlign: 'center',
+                }}
+              >
+                Заселение
+              </Box>
+            </Box>
+          )}
           {/* Grid */}
           {renderGrid()}
         </Box>

@@ -230,6 +230,7 @@ const Sheet: React.FC = () => {
         <Spreadsheet
           sheet={currentSheet}
           userPermissions={userPermissions}
+          reportDate={reportDate}
         />
       </Box>
 

@@ -268,7 +268,7 @@ INSERT INTO sheet_templates (name, description, category, structure, row_count, 
 ('Отчет заселения/выселения DMD Cottage', 'Ежедневный отчет о заселениях и выселениях на конкретную дату', 'hotel', 
 JSON_OBJECT(
     'headers', JSON_ARRAY(
-        JSON_OBJECT('row', 0, 'column', 0, 'value', 'ДАТА ОТЧЕТА', 'format', JSON_OBJECT('fontWeight', 'bold', 'fontSize', '16px', 'textAlign', 'center')),
+        -- JSON_OBJECT('row', 0, 'column', 0, 'value', 'ДАТА ОТЧЕТА', 'format', JSON_OBJECT('fontWeight', 'bold', 'fontSize', '16px', 'textAlign', 'center')),
         JSON_OBJECT('row', 0, 'column', 2, 'value', 'ВЫСЕЛЕНИЕ', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#ffebee', 'textAlign', 'center')),
         JSON_OBJECT('row', 0, 'column', 6, 'value', 'ЗАСЕЛЕНИЕ', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#e8f5e8', 'textAlign', 'center')),
         JSON_OBJECT('row', 1, 'column', 0, 'value', 'Адрес', 'format', JSON_OBJECT('fontWeight', 'bold', 'backgroundColor', '#f5f5f5')),

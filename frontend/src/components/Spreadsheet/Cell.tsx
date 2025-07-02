@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, TextField, Select, MenuItem, FormControl } from '@mui/material';
+import { useSelector } from 'react-redux';
 
 interface CellProps {
   row: number;
@@ -54,6 +55,10 @@ const Cell: React.FC<CellProps> = ({
   sheetTitle = '',
 }) => {
   const [selectOpen, setSelectOpen] = useState(false);
+  
+  // Безопасное получение данных из Redux store
+  const sheets = useSelector((state: any) => state?.spreadsheet?.sheets || []);
+  const sheet = sheets.find((s: any) => s.name === sheetTitle);
 
   const isHouseStatusField = () => {
     const isJournalSheet = sheetTitle.includes('Журнал заселения');
@@ -62,6 +67,13 @@ const Cell: React.FC<CellProps> = ({
     
     return isJournalSheet && isColumn9 && isNotHeaderRow;
   };
+
+  const isReportSheet = sheetTitle.includes('Отчет');
+  const needsLeftBorder = isReportSheet && (column === 2 || column === 6);
+
+  // Проверяем, является ли лист отчетом на основе шаблона DMD Cottage
+  const isDMDCottageReport = sheet?.templateName === 'Отчет заселения/выселения DMD Cottage';
+  const needsThickBorder = isDMDCottageReport && (column === 2 || column === 6);
 
   useEffect(() => {
     if (isEditing && isHouseStatusField()) {
@@ -147,6 +159,16 @@ const Cell: React.FC<CellProps> = ({
       }
     }
 
+    // Добавляем жирную левую границу для столбцов C и G в отчетах
+    if (needsLeftBorder) {
+      styles.borderLeft = '2px solid #000000';
+    }
+
+    // Добавляем жирную левую границу только для отчетов DMD Cottage
+    if (needsThickBorder) {
+      styles.borderLeft = '2px solid black';
+    }
+
     if (!format.backgroundColor) {
       if (isSelected) {
         styles.backgroundColor = '#e3f2fd';
@@ -165,6 +187,7 @@ const Cell: React.FC<CellProps> = ({
       styles['&:hover'] = {
         backgroundColor: readOnly ? '#f9f9f9' : '#f5f5f5',
         border: '1px solid #bdbdbd',
+        borderLeft: needsLeftBorder ? '2px solid #000000' : needsThickBorder ? '2px solid black' : undefined,
       };
     }
 
