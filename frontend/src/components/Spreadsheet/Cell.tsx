@@ -23,6 +23,7 @@ interface CellProps {
   onBlur?: () => void;
   readOnly: boolean;
   sheetTitle?: string;
+  templateName?: string;
 }
 
 const HOUSE_STATUS_OPTIONS = [
@@ -53,6 +54,7 @@ const Cell: React.FC<CellProps> = ({
   onBlur,
   readOnly,
   sheetTitle = '',
+  templateName = '',
 }) => {
   const [selectOpen, setSelectOpen] = useState(false);
   
@@ -68,11 +70,8 @@ const Cell: React.FC<CellProps> = ({
     return isJournalSheet && isColumn9 && isNotHeaderRow;
   };
 
-  const isReportSheet = sheetTitle.includes('Отчет');
-  const needsLeftBorder = isReportSheet && (column === 2 || column === 6);
-
-  // Проверяем, является ли лист отчетом на основе шаблона DMD Cottage
-  const isDMDCottageReport = sheet?.template?.name === 'Отчет заселения/выселения DMD Cottage';
+  // Проверяем, является ли это отчетом DMD Cottage по шаблону
+  const isDMDCottageReport = templateName === 'Отчет заселения/выселения DMD Cottage';
   const needsThickBorder = isDMDCottageReport && (column === 2 || column === 6);
 
   useEffect(() => {
@@ -159,14 +158,9 @@ const Cell: React.FC<CellProps> = ({
       }
     }
 
-    // Добавляем жирную левую границу для столбцов C и G в отчетах
-    if (needsLeftBorder) {
-      styles.borderLeft = '2px solid #000000';
-    }
-
-    // Добавляем жирную левую границу только для отчетов DMD Cottage
+    // Добавляем жирную левую границу для столбцов C и G в отчетах DMD Cottage
     if (needsThickBorder) {
-      styles.borderLeft = '2px solid black';
+      styles.borderLeft = '2px solid #000000';
     }
 
     if (!format.backgroundColor) {
@@ -187,7 +181,7 @@ const Cell: React.FC<CellProps> = ({
       styles['&:hover'] = {
         backgroundColor: readOnly ? '#f9f9f9' : '#f5f5f5',
         border: '1px solid #bdbdbd',
-        borderLeft: needsLeftBorder ? '2px solid #000000' : needsThickBorder ? '2px solid black' : undefined,
+        borderLeft: needsThickBorder ? '2px solid #000000' : undefined,
       };
     }
 

@@ -1659,6 +1659,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
                     onBlur={handleEditBlur}
                     readOnly={userPermissions === 'read'}
                     sheetTitle={sheet.name || ''}
+                    templateName={sheet.template?.name || ''}
                   />
                 );
               }
