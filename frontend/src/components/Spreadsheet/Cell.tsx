@@ -72,7 +72,7 @@ const Cell: React.FC<CellProps> = ({
   const needsLeftBorder = isReportSheet && (column === 2 || column === 6);
 
   // Проверяем, является ли лист отчетом на основе шаблона DMD Cottage
-  const isDMDCottageReport = sheet?.templateName === 'Отчет заселения/выселения DMD Cottage';
+  const isDMDCottageReport = sheet?.template?.name === 'Отчет заселения/выселения DMD Cottage';
   const needsThickBorder = isDMDCottageReport && (column === 2 || column === 6);
 
   useEffect(() => {
