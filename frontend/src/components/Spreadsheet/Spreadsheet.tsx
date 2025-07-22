@@ -1695,6 +1695,24 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
            sheet?.template?.name?.toLowerCase().includes('отчет');
   }, [sheet?.name, sheet?.template?.name]);
 
+  // Отладочный лог для диагностики
+  // useEffect(() => {
+  //   // if (sheet?.template?.name) {
+  //   //   console.log(`Sheet template name: "${sheet.template.name}"`);
+  //   // } else {
+  //   //   console.log(`Sheet template is missing:`, sheet?.template);
+  //   // }
+    
+  //   // if (sheet) {
+  //   //   console.log(`Full sheet object:`, {
+  //   //     id: sheet.id,
+  //   //     name: sheet.name,
+  //   //     template: sheet.template,
+  //   //     templateId: sheet.templateId
+  //   //   });
+  //   // }
+  // }, [sheet?.template?.name, sheet]);
+
   // Функция для экспорта в Excel
   const handleExportExcel = () => {
     // Собираем данные в массив массивов (AOA)
@@ -1880,6 +1898,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
                   justifyContent: 'center',
                   backgroundColor: '#f5f5f5',
                   border: '1px solid #e0e0e0',
+                  borderLeft: sheet?.template?.name === 'Отчет заселения/выселения DMD Cottage' ? '2px solid #000000' : '1px solid #e0e0e0',
                   fontWeight: 'bold',
                   fontSize: '0.95rem',
                   textAlign: 'center',
@@ -1897,6 +1916,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
                   justifyContent: 'center',
                   backgroundColor: '#f5f5f5',
                   border: '1px solid #e0e0e0',
+                  borderLeft: sheet?.template?.name === 'Отчет заселения/выселения DMD Cottage' ? '2px solid #000000' : '1px solid #e0e0e0',
                   fontWeight: 'bold',
                   fontSize: '0.95rem',
                   textAlign: 'center',

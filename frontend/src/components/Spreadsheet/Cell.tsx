@@ -71,20 +71,31 @@ const Cell: React.FC<CellProps> = ({
   };
 
   // Проверяем, является ли это отчетом DMD Cottage по шаблону
-  const isDMDCottageReport = templateName === 'Отчет заселения/выселения DMD Cottage';
+  const isDMDCottageReport = templateName === 'Отчет заселения/выселения DMD Cottage' || 
+                             templateName?.includes('Отчет заселения/выселения DMD Cottage');
   const needsThickBorder = isDMDCottageReport && (column === 2 || column === 6);
 
-  useEffect(() => {
-    if (isEditing && isHouseStatusField()) {
-      const timer = setTimeout(() => {
-        setSelectOpen(true);
-      }, 100);
+  // Отладочные логи
+  // if (row <= 3 && (column === 2 || column === 6)) {
+  //   console.log(`Cell [${row},${column}]: templateName="${templateName}", sheetTitle="${sheetTitle}", isDMDCottageReport=${isDMDCottageReport}, needsThickBorder=${needsThickBorder}`);
+  // }
+
+  // // Дополнительное логирование для первой ячейки каждой строки
+  // if (column === 0 && row <= 3) {
+  //   console.log(`Row ${row} first cell: templateName="${templateName}", sheetTitle="${sheetTitle}"`);
+  // }
+
+  // useEffect(() => {
+  //   if (isEditing && isHouseStatusField()) {
+  //     const timer = setTimeout(() => {
+  //       setSelectOpen(true);
+  //     }, 100);
       
-      return () => clearTimeout(timer);
-    } else {
-      setSelectOpen(false);
-    }
-  }, [isEditing, column, row, sheetTitle]);
+  //     return () => clearTimeout(timer);
+  //   } else {
+  //     setSelectOpen(false);
+  //   }
+  // }, [isEditing, column, row, sheetTitle]);
 
   const getFormattedStyles = () => {
     const styles: any = {
