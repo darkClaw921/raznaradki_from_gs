@@ -133,6 +133,13 @@ const Cell: React.FC<CellProps> = ({
       styles.wordWrap = format.wordWrap || 'break-word';
       styles.textOverflow = 'unset';
       delete styles.textOverflow;
+    } else if (isDMDCottageReport) {
+      // Для отчета DMD Cottage включаем перенос по умолчанию, чтобы он сохранялся при смене даты и повторной автонастройке
+      styles.whiteSpace = 'normal';
+      styles.overflow = 'visible';
+      styles.wordWrap = 'break-word';
+      styles.textOverflow = 'unset';
+      delete styles.textOverflow;
     }
 
     if (format.border) {

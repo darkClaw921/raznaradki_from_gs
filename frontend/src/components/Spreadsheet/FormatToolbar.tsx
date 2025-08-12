@@ -32,7 +32,8 @@ import {
   FontDownload,
   History,
   Add,
-  WrapText
+  WrapText,
+  AspectRatio
 } from '@mui/icons-material';
 
 interface FormatToolbarProps {
@@ -41,7 +42,9 @@ interface FormatToolbarProps {
   onAddRow: (count?: number) => void;
   onAddColumn: (count?: number) => void;
   onShowHistory: (row: number, column: number) => void;
+  onAutoResize?: () => void;
   userPermissions: string;
+  isReportSheet?: boolean;
 }
 
 const FormatToolbar: React.FC<FormatToolbarProps> = ({
@@ -50,7 +53,9 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({
   onAddRow,
   onAddColumn,
   onShowHistory,
-  userPermissions
+  onAutoResize,
+  userPermissions,
+  isReportSheet = false
 }) => {
   const [fontFamily, setFontFamily] = useState('Arial');
   const [fontSize, setFontSize] = useState(12);
@@ -274,6 +279,18 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({
               <WrapText />
             </IconButton>
           </Tooltip>
+
+          {/* Автонастройка размеров для отчетов */}
+          {isReportSheet && onAutoResize && (
+            <Tooltip title="Автонастройка размеров строк и столбцов">
+              <IconButton 
+                onClick={onAutoResize}
+                size="small"
+              >
+                <AspectRatio />
+              </IconButton>
+            </Tooltip>
+          )}
 
           <Divider orientation="vertical" flexItem />
 

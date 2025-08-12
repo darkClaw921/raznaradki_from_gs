@@ -24,6 +24,9 @@ import SortIcon from '@mui/icons-material/Sort';
 import { styled } from '@mui/material/styles';
 // @ts-ignore
 import * as XLSX from 'xlsx';
+// ExcelJS для экспорта с форматированием
+// @ts-ignore
+import ExcelJS from 'exceljs';
 import { Button, Stack } from '@mui/material';
 
 interface SpreadsheetProps {
@@ -192,8 +195,15 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
 
     // Загружаем размеры из настроек таблицы
     if (sheet?.settings) {
-      setColumnSizes(sheet.settings.columnSizes || {});
-      setRowSizes(sheet.settings.rowSizes || {});
+      const columnSizes = sheet.settings.columnSizes || {};
+      const rowSizes = sheet.settings.rowSizes || {};
+      console.log('📏 Загружаем размеры из настроек таблицы:', { columnSizes, rowSizes });
+      setColumnSizes(columnSizes);
+      setRowSizes(rowSizes);
+    } else {
+      console.log('⚠️ Настройки таблицы отсутствуют, используем размеры по умолчанию');
+      setColumnSizes({});
+      setRowSizes({});
     }
   }, [sheet]);
 
@@ -1246,7 +1256,12 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
   }, [clipboard]);
 
   const getColumnWidth = (column: number): number => {
-    return columnSizes[column] || 100;
+    const width = columnSizes[column] || 100;
+    // Отладочный лог только для автонастройки
+    if (process.env.NODE_ENV === 'development' && columnSizes[column]) {
+      console.log(`🔍 getColumnWidth(${column}) = ${width} из columnSizes:`, columnSizes);
+    }
+    return width;
   };
 
   // Функция генерации названий столбцов в правильном формате A, B, Z, AA, AB
@@ -1691,9 +1706,186 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
   }, [debouncedSaveCell, debouncedUpdateSelection, debouncedScrollUpdate]);
 
   const isReportSheet = useMemo(() => {
-    return sheet?.name?.toLowerCase().includes('отчет') ||
-           sheet?.template?.name?.toLowerCase().includes('отчет');
+    const result = sheet?.name?.toLowerCase().includes('отчет') ||
+                   sheet?.template?.name?.toLowerCase().includes('отчет');
+    console.log('🔍 isReportSheet проверка:', {
+      sheetName: sheet?.name,
+      templateName: sheet?.template?.name,
+      result
+    });
+    return result;
   }, [sheet?.name, sheet?.template?.name]);
+
+  // Функция для расчета оптимальной ширины столбца на основе содержимого
+  const calculateOptimalColumnWidth = useCallback((column: number): number => {
+    const MIN_WIDTH = 100;
+    const MAX_WIDTH = 400;
+    const PADDING = 24; // горизонтальные отступы ячейки
+
+    // Ленивая инициализация canvas для точного измерения текста
+    const getTextWidth = (() => {
+      let canvas: HTMLCanvasElement | null = null;
+      let ctx: CanvasRenderingContext2D | null = null;
+      return (text: string) => {
+        if (!canvas) {
+          canvas = document.createElement('canvas');
+          ctx = canvas.getContext('2d');
+        }
+        if (!ctx) return text.length * 9 + PADDING; // fallback
+        ctx.font = '14px Arial';
+        return ctx.measureText(text).width + PADDING;
+      };
+    })();
+
+    let maxWidth = MIN_WIDTH;
+    const rowLimit = Math.min(sheet.rowCount || 100, 200);
+    for (let row = 0; row < rowLimit; row++) {
+      const cell = cells.get(`${row}-${column}`);
+      const text = cell?.value || '';
+      if (text) {
+        maxWidth = Math.max(maxWidth, Math.ceil(getTextWidth(text)));
+      }
+    }
+    return Math.min(maxWidth, MAX_WIDTH);
+  }, [cells, sheet.rowCount]);
+
+  // Функция для расчета оптимальной высоты строки с учетом переноса текста
+  const calculateOptimalRowHeight = useCallback((row: number): number => {
+    const MIN_HEIGHT = 30;
+    const MAX_HEIGHT = 280;
+    const LINE_HEIGHT = 20;
+    const CHAR_WIDTH = 8;
+
+    let maxHeight = MIN_HEIGHT;
+    const maxCols = Math.min(sheet.columnCount || 26, 50);
+    for (let col = 0; col < maxCols; col++) {
+      const cell = cells.get(`${row}-${col}`);
+      if (!cell?.value) continue;
+      const columnWidth = getColumnWidth(col);
+      const availableWidth = Math.max(40, columnWidth - 16);
+      const charsPerLine = Math.max(1, Math.floor(availableWidth / CHAR_WIDTH));
+      const lines = Math.ceil(cell.value.length / charsPerLine);
+      const cellHeight = lines * LINE_HEIGHT + 8; // +8 padding
+      maxHeight = Math.max(maxHeight, cellHeight);
+    }
+    return Math.min(maxHeight, MAX_HEIGHT);
+  }, [cells, getColumnWidth, sheet.columnCount]);
+
+  // Функция автонастройки размеров для отчетов
+  const handleAutoResize = useCallback(async () => {
+    if (!isReportSheet || userPermissions === 'read') {
+      console.log('⚠️ Автонастройка пропущена:', { isReportSheet, userPermissions });
+      return;
+    }
+    
+    console.log('🔧 Автонастройка размеров для отчета заселения/выселения');
+    console.log('📊 Текущие размеры - columnSizes:', columnSizes, 'rowSizes:', rowSizes);
+    console.log('📋 Текущие настройки таблицы:', sheet.settings);
+    
+    try {
+      const newColumnSizes: { [key: number]: number } = {};
+      const newRowSizes: { [key: number]: number } = {};
+
+      // Полный охват столбцов
+      const maxCols = sheet.columnCount || 26;
+      for (let col = 0; col < maxCols; col++) {
+        const optimalWidth = calculateOptimalColumnWidth(col);
+        if (optimalWidth !== getColumnWidth(col)) newColumnSizes[col] = optimalWidth;
+      }
+
+      // Пересчет высот строк с учетом НОВЫХ ширин столбцов
+      const effectiveWidth = (col: number) => newColumnSizes[col] ?? getColumnWidth(col);
+      const maxRows = Math.min(sheet.rowCount || 100, 500);
+      for (let row = 0; row < maxRows; row++) {
+        const MIN_HEIGHT = 30;
+        const MAX_HEIGHT = 280;
+        const LINE_HEIGHT = 20;
+        const CHAR_WIDTH = 8;
+        let maxHeight = MIN_HEIGHT;
+        for (let col = 0; col < maxCols; col++) {
+          const cell = cells.get(`${row}-${col}`);
+          if (!cell?.value) continue;
+          const availableWidth = Math.max(40, effectiveWidth(col) - 16);
+          const charsPerLine = Math.max(1, Math.floor(availableWidth / CHAR_WIDTH));
+          const lines = Math.ceil(cell.value.length / charsPerLine);
+          const cellHeight = lines * LINE_HEIGHT + 8;
+          maxHeight = Math.max(maxHeight, cellHeight);
+        }
+        const optimalHeight = Math.min(maxHeight, MAX_HEIGHT);
+        if (optimalHeight !== getRowHeight(row)) newRowSizes[row] = optimalHeight;
+      }
+
+      const currentSettings = sheet.settings || { columnSizes: {}, rowSizes: {} };
+      const updatedSettings = {
+        ...currentSettings,
+        columnSizes: { ...(currentSettings.columnSizes || {}), ...newColumnSizes },
+        rowSizes: { ...(currentSettings.rowSizes || {}), ...newRowSizes }
+      };
+
+      const hasChanges = Object.keys(newColumnSizes).length > 0 || Object.keys(newRowSizes).length > 0;
+      if (hasChanges) {
+        const response = await sheetsExtendedApi.updateSettings(sheet.id.toString(), updatedSettings);
+        console.log('✅ Автонастройка: настройки сохранены в backend', response.data);
+        if (response.data?.settings) {
+          const { columnSizes: savedColumnSizes = {}, rowSizes: savedRowSizes = {} } = response.data.settings;
+          console.log('🔄 Ответ от сервера - настройки:', response.data.settings);
+          if (Object.keys(newColumnSizes).length > 0) setColumnSizes(savedColumnSizes);
+          if (Object.keys(newRowSizes).length > 0) setRowSizes(savedRowSizes);
+        }
+      } else {
+        console.log('ℹ️ Автонастройка: изменений размеров нет, запрос к backend не отправлен');
+      }
+      
+      // Применяем форматирование переноса текста
+      // Собираем ячейки для применения переноса текста (повторное вычисление, т.к. выше переменная вне скоупа)
+      const cellsToUpdate: Array<{ row: number; column: number; format: any }> = [];
+      cells.forEach((cell) => {
+        if (cell.value && cell.value.length > 9) {
+          const format = {
+            ...cell.format,
+            whiteSpace: 'normal',
+            wordWrap: 'break-word',
+            overflow: 'visible'
+          };
+          cellsToUpdate.push({ row: cell.row, column: cell.column, format });
+        }
+      });
+      
+      if (cellsToUpdate.length > 0) {
+        for (const cellUpdate of cellsToUpdate) {
+          await cellsApi.updateCell(sheet.id, cellUpdate.row, cellUpdate.column, { format: cellUpdate.format });
+        }
+        // Обновляем локальное состояние ячеек
+        const newCells = new Map(cells);
+        cellsToUpdate.forEach((cellUpdate) => {
+          const key = `${cellUpdate.row}-${cellUpdate.column}`;
+          const cell = newCells.get(key);
+          if (cell) {
+            newCells.set(key, { ...cell, format: cellUpdate.format });
+          }
+        });
+        setCells(newCells);
+      }
+      
+      // Принудительная перезагрузка данных таблицы для обновления settings
+      try {
+        const sheetResponse = await sheetsApi.getSheet(sheet.id.toString());
+        if (sheetResponse.data?.sheet?.settings) {
+          const { columnSizes: reloadedColumnSizes = {}, rowSizes: reloadedRowSizes = {} } = sheetResponse.data.sheet.settings;
+          console.log('🔄 Перезагружены размеры из таблицы:', { reloadedColumnSizes, reloadedRowSizes });
+          setColumnSizes(reloadedColumnSizes);
+          setRowSizes(reloadedRowSizes);
+        }
+      } catch (reloadError) {
+        console.error('❌ Ошибка перезагрузки настроек таблицы:', reloadError);
+      }
+      
+      console.log('✅ Автонастройка размеров завершена успешно');
+      
+    } catch (error) {
+      console.error('❌ Ошибка при автонастройке размеров:', error);
+    }
+  }, [isReportSheet, userPermissions, calculateOptimalColumnWidth, calculateOptimalRowHeight, cells, getColumnWidth, getRowHeight, sheet, columnSizes, rowSizes]);
 
   // Отладочный лог для диагностики
   // useEffect(() => {
@@ -1713,79 +1905,280 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
   //   // }
   // }, [sheet?.template?.name, sheet]);
 
-  // Функция для экспорта в Excel
-  const handleExportExcel = () => {
-    // Собираем данные в массив массивов (AOA)
-    const data: any[][] = [];
-    for (let row = 0; row < (sheet.rowCount || 100); row++) {
-      const rowData: any[] = [];
-      for (let col = 0; col < (sheet.columnCount || 26); col++) {
-        rowData.push(getCellValue(row, col));
+  // Функция для экспорта в Excel с сохранением ширин/высот/границ/форматирования
+  const handleExportExcel = async () => {
+    // Хелперы преобразований и стилей
+    const hexToARGB = (hex?: string): string | undefined => {
+      if (!hex) return undefined;
+      const cleaned = hex.replace('#', '');
+      if (cleaned.length === 3) {
+        const r = cleaned[0];
+        const g = cleaned[1];
+        const b = cleaned[2];
+        return `FF${r}${r}${g}${g}${b}${b}`.toUpperCase();
       }
-      data.push(rowData);
-    }
-    // Формируем корректное имя листа (до 31 символа, без недопустимых символов)
-    let safeSheetName = (sheet.name || 'Report')
-      .replace(/[\\/?*\[\]:]/g, '')
-      .slice(0, 31)
-      .trim();
-    if (!safeSheetName) safeSheetName = 'Report';
-    const ws = XLSX.utils.aoa_to_sheet(data);
+      if (cleaned.length === 6) return `FF${cleaned}`.toUpperCase();
+      return undefined;
+    };
+    const pxToExcelColWidth = (px: number): number => {
+      const val = (px - 5) / 7; // приближенно
+      return Math.max(2, Math.round(val * 100) / 100);
+    };
+    const pxToPoints = (px: number): number => Math.round(px * 0.75 * 100) / 100;
+    const parseFontSize = (v: any): number | undefined => {
+      if (typeof v === 'number' && isFinite(v)) return v;
+      if (typeof v === 'string') {
+        const m = v.trim().match(/^(\d+)(px)?$/i);
+        if (m) return parseInt(m[1], 10);
+      }
+      return undefined;
+    };
+    const getReportDateString = (): string => {
+      const raw = (reportDate || sheet?.reportDate || (cells.get('0-0')?.value ?? '')).toString();
+      if (!raw) return '';
+      // Поддержка форматов YYYY-MM-DD и DD.MM.YYYY
+      const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (iso) return `${iso[3]}.${iso[2]}.${iso[1]}`;
+      const dotted = raw.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+      if (dotted) return `${dotted[1]}.${dotted[2]}.${dotted[3]}`;
+      return raw;
+    };
 
-    // --- Сбор merges для объединённых ячеек ---
-    const merges: any[] = [];
-    if (sheet.cells) {
-      const visited = new Set();
-      for (const cell of sheet.cells) {
-        if (cell.mergedWith && !visited.has(`${cell.row}-${cell.column}`)) {
-          // mergedWith = "row-col" (например, "0-0")
-          const [startRow, startCol] = cell.mergedWith.split('-').map(Number);
-          const endRow = cell.row;
-          const endCol = cell.column;
-          merges.push({ s: { r: startRow, c: startCol }, e: { r: endRow, c: endCol } });
-          // Помечаем все ячейки диапазона как обработанные
-          for (let r = startRow; r <= endRow; r++) {
-            for (let c = startCol; c <= endCol; c++) {
-              visited.add(`${r}-${c}`);
-            }
+    const workbook = new ExcelJS.Workbook();
+    const wsName = (sheet.name || 'Report')
+      .replace(/[\\/?*\[\]:]/g, '')
+      .trim()
+      .slice(0, 31) || 'Report';
+    const worksheet = workbook.addWorksheet(wsName);
+
+    const totalRows = sheet.rowCount || 100;
+    const totalCols = sheet.columnCount || 26;
+
+    // Установка ширин столбцов (по Column.width) и fallback на минимальное значение
+    for (let col = 0; col < totalCols; col++) {
+      const widthPx = Math.max(20, getColumnWidth(col));
+      const width = pxToExcelColWidth(widthPx);
+      const colRef = worksheet.getColumn(col + 1);
+      colRef.width = Math.max(2, width);
+    }
+
+    // Установка высот строк (Row.height в поинтах)
+    for (let row = 0; row < totalRows; row++) {
+      const heightPx = Math.max(16, getRowHeight(row));
+      worksheet.getRow(row + 1).height = pxToPoints(heightPx);
+    }
+
+    const isDMDCottageReport = sheet?.template?.name === 'Отчет заселения/выселения DMD Cottage' ||
+                               sheet?.template?.name?.includes('Отчет заселения/выселения DMD Cottage');
+
+    // Заполнение значений и применение форматирования
+    for (let row = 0; row < totalRows; row++) {
+      for (let col = 0; col < totalCols; col++) {
+        const cellRef = worksheet.getCell(row + 1, col + 1);
+        // Не записываем значения в первую строку для отчета — она будет задаться вручную ниже
+        if (sheet?.template?.name?.includes('Отчет') && row === 0) {
+          cellRef.value = null;
+        } else {
+          cellRef.value = getCellValue(row, col) as any;
+        }
+
+        const fmt: any = getCellFormat(row, col) || {};
+        // Шрифт
+        cellRef.font = {
+          name: fmt.fontFamily || undefined,
+          size: parseFontSize(fmt.fontSize),
+          bold: fmt.fontWeight === 'bold' ? true : undefined,
+          italic: fmt.fontStyle === 'italic' ? true : undefined,
+          underline: fmt.textDecoration === 'underline' ? true : undefined,
+          color: fmt.textColor ? { argb: hexToARGB(fmt.textColor) } : undefined,
+        } as any;
+
+        // Выравнивание + перенос текста
+        cellRef.alignment = {
+          horizontal: fmt.textAlign || 'left',
+          vertical: 'middle',
+          wrapText: !!(fmt.whiteSpace === 'normal' || fmt.textWrap === 'wrap'),
+        } as any;
+
+        // Заливка
+        if (fmt.backgroundColor) {
+          const argb = hexToARGB(fmt.backgroundColor);
+          if (argb) {
+            cellRef.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb }
+            } as any;
           }
         }
-      }
-    }
-    // --- Явные merges для шапки отчета ---
-    if (sheet?.template?.name?.includes('Отчет')) {
-      merges.push(
-        { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }, // A1:B1 Дата
-        { s: { r: 0, c: 2 }, e: { r: 0, c: 5 } }, // C1:F1 Выселение
-        { s: { r: 0, c: 6 }, e: { r: 0, c: 16 } } // G1:Q1 Заселение
-      );
-    }
-    if (merges.length > 0) {
-      ws['!merges'] = merges;
-    }
-    // --- конец блока merges ---
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
-    XLSX.writeFile(wb, `${safeSheetName}.xlsx`);
-
-    // --- Устанавливаем дату отчета в A1 (data[0][0]) ---
-    if (sheet?.template?.name?.includes('Отчет')) {
-      if (data[0]) {
-        // Форматируем дату как в интерфейсе (DD.MM.YYYY)
-        let reportDateStr = '';
-        if (sheet.reportDate) {
-          const parts = sheet.reportDate.split('-');
-          if (parts.length === 3) reportDateStr = `${parts[2]}.${parts[1]}.${parts[0]}`;
-          else reportDateStr = sheet.reportDate;
+        // Границы (упрощенно: 'all' и 'outer' → все стороны)
+        const makeBorder = (width?: number, style?: string, color?: string) => {
+          const s: any = style === 'double' ? 'double' : (width && width >= 2 ? 'medium' : 'thin');
+          const c = color ? { argb: hexToARGB(color) } : { argb: 'FF000000' };
+          const side: any = { style: s, color: c };
+          return { top: side, left: side, bottom: side, right: side } as any;
+        };
+        if (fmt.border) {
+          const b = fmt.border;
+          if (b.type === 'all' || b.type === 'outer' || b.type === undefined) {
+            cellRef.border = makeBorder(b.width, b.style, b.color);
+          }
+          // 'inner' пропускаем в экспорте, т.к. требует диапазонной логики
         }
-        data[0][0] = reportDateStr;
-        data[0][1] = '';
+
+        // Толстая левая граница для столбцов C(2) и G(6) в отчете DMD Cottage
+        if (isDMDCottageReport && (col === 2 || col === 6)) {
+          cellRef.border = {
+            ...(cellRef.border || {}),
+            left: { style: 'medium', color: { argb: 'FF000000' } }
+          } as any;
+        }
       }
+    }
+
+    // Объединения ячеек
+    const normalizeRange = (r1: number, c1: number, r2: number, c2: number) => {
+      const rr1 = Math.max(0, Math.min(r1, r2));
+      const rr2 = Math.max(0, Math.max(r1, r2));
+      const cc1 = Math.max(0, Math.min(c1, c2));
+      const cc2 = Math.max(0, Math.max(c1, c2));
+      return { r1: rr1, c1: cc1, r2: rr2, c2: cc2 };
+    };
+    const mergeKey = (r1: number, c1: number, r2: number, c2: number) => `${r1}-${c1}-${r2}-${c2}`;
+    const existingMerges = new Set<string>();
+    const mergeRanges: Array<{ r1: number; c1: number; r2: number; c2: number }> = [];
+    const addMerge = (r1: number, c1: number, r2: number, c2: number) => {
+      const { r1: nr1, c1: nc1, r2: nr2, c2: nc2 } = normalizeRange(r1, c1, r2, c2);
+      // Валидируем границы по размеру листа
+      if (nr1 < 0 || nr2 < 0 || nc1 < 0 || nc2 < 0) return;
+      if (nr1 >= totalRows || nr2 >= totalRows) return;
+      if (nc1 >= totalCols || nc2 >= totalCols) return;
+      if (nr1 === nr2 && nc1 === nc2) return; // нет смысла
+      const key = mergeKey(nr1, nc1, nr2, nc2);
+      if (existingMerges.has(key)) return;
+      try {
+        worksheet.mergeCells(nr1 + 1, nc1 + 1, nr2 + 1, nc2 + 1);
+        existingMerges.add(key);
+        mergeRanges.push({ r1: nr1, c1: nc1, r2: nr2, c2: nc2 });
+      } catch {}
+    };
+    // Собираем merges из данных (временно отключено из-за потенциальных конфликтов источника данных)
+    // if (sheet?.cells && Array.isArray(sheet.cells)) {
+    //   const visited = new Set<string>();
+    //   for (const cell of sheet.cells) {
+    //     if (cell && cell.mergedWith && !visited.has(`${cell.row}-${cell.column}`)) {
+    //       const [srStr, scStr] = String(cell.mergedWith).split('-');
+    //       const sr = parseInt(srStr, 10);
+    //       const sc = parseInt(scStr, 10);
+    //       const er = Number(cell.row);
+    //       const ec = Number(cell.column);
+    //       if (!Number.isNaN(sr) && !Number.isNaN(sc) && !Number.isNaN(er) && !Number.isNaN(ec)) {
+    //         for (let r = sr; r <= er; r++) {
+    //           for (let c = sc; c <= ec; c++) visited.add(`${r}-${c}`);
+    //         }
+    //         addMerge(sr, sc, er, ec);
+    //       }
+    //     }
+    //   }
+    // }
+    const overlaps = (a: {r1:number;c1:number;r2:number;c2:number}, b: {r1:number;c1:number;r2:number;c2:number}) => {
+      return !(a.r2 < b.r1 || a.r1 > b.r2 || a.c2 < b.c1 || a.c1 > b.c2);
+    };
+    // Явные merges для шапки отчета — только если в пределах границ и не перекрывают уже существующие диапазоны
+    if (sheet?.template?.name?.includes('Отчет')) {
+      const r1 = { r1: 0, c1: 0, r2: 0, c2: Math.min(1, totalCols - 1) };
+      const r2 = { r1: 0, c1: 2, r2: 0, c2: Math.min(5, totalCols - 1) };
+      const r3 = { r1: 0, c1: 6, r2: 0, c2: Math.min(16, totalCols - 1) };
+      const ranges = [r1, r2, r3];
+      for (const r of ranges) {
+        if (r.c1 <= r.c2 && r.r1 <= r.r2) {
+          const conflict = mergeRanges.some((m) => overlaps(m, r));
+          if (!conflict) addMerge(r.r1, r.c1, r.r2, r.c2);
+        }
+      }
+    }
+
+    // Очищаем значения во всех слитых диапазонах, кроме мастер-ячейки (верхняя левая)
+    for (const mr of mergeRanges) {
+      for (let r = mr.r1; r <= mr.r2; r++) {
+        for (let c = mr.c1; c <= mr.c2; c++) {
+          if (r === mr.r1 && c === mr.c1) continue; // мастер-ячейка сохраняет значение
+          const cell = worksheet.getCell(r + 1, c + 1);
+          cell.value = null;
+        }
+      }
+    }
+
+    // Специальная дата отчета в A1 — после мерджей
+    if (sheet?.template?.name?.includes('Отчет')) {
+      const a1 = worksheet.getCell(1, 1);
+      a1.value = getReportDateString();
+      if (totalCols > 1) {
+        try { worksheet.getCell(1, 2).value = null; } catch {}
+      }
+      // Устанавливаем значения заголовков для слитых блоков C1:F1 и G1:Q1
+      if (totalCols > 2) {
+        const c1 = worksheet.getCell(1, 3);
+        c1.value = 'Выселение';
+      }
+      if (totalCols > 6) {
+        const g1 = worksheet.getCell(1, 7);
+        g1.value = 'Заселение';
+      }
+      // Выравнивание шапки по центру для мастер-ячейки каждого слитого заголовка
+      const headerMasters: Array<[number, number]> = [[1, 1]];
+      if (totalCols > 2) headerMasters.push([1, 3]);
+      if (totalCols > 6) headerMasters.push([1, 7]);
+      headerMasters.forEach(([r, c]) => {
+        const cell = worksheet.getCell(r, c);
+        cell.alignment = { ...(cell.alignment || {}), horizontal: 'center', vertical: 'middle' } as any;
+        cell.font = { ...(cell.font || {}), bold: true } as any;
+      });
+    }
+
+    // Дополнительно: принудительно задать A1 перед сохранением, если вдруг осталось пусто
+    if (sheet?.template?.name?.includes('Отчет')) {
+      const enforcedDate = getReportDateString();
+      const a1v = worksheet.getCell(1, 1).value;
+      if (!a1v || (typeof a1v === 'string' && a1v.trim() === '')) {
+        worksheet.getCell(1, 1).value = enforcedDate;
+      }
+    }
+
+    // Границы второй строки (часто это строка заголовков колонок отчета)
+    if (sheet?.template?.name?.includes('Отчет') && (totalCols > 0 && totalRows > 1)) {
+      const thin = { style: 'thin', color: { argb: 'FF000000' } } as any;
+      for (let c = 1; c <= totalCols; c++) {
+        const cell = worksheet.getCell(2, c);
+        cell.border = {
+          top: thin,
+          left: thin,
+          bottom: thin,
+          right: thin
+        } as any;
+      }
+    }
+
+    // Запись файла
+    const safeName = (sheet.name || 'Report').replace(/[\\/?*\[\]:]/g, '').trim().slice(0, 31) || 'Report';
+    const dateForName = getReportDateString();
+    const fileName = dateForName ? `${safeName} ${dateForName}` : safeName;
+    try {
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+    link.download = `${fileName}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Ошибка генерации XLSX через ExcelJS.writeBuffer:', err);
     }
   };
 
-  // Функция для экспорта в CSV
+  // Функция для экспорта в CSV (только данные; форматирование в CSV не поддерживается)
   const handleExportCSV = () => {
     const data: any[][] = [];
     for (let row = 0; row < (sheet.rowCount || 100); row++) {
@@ -1796,8 +2189,11 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       data.push(rowData);
     }
     const ws = XLSX.utils.aoa_to_sheet(data);
-    const csv = XLSX.utils.sheet_to_csv(ws, { FS: ';' });
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const csvBody = XLSX.utils.sheet_to_csv(ws, { FS: ';' });
+    const csvContent = `sep=;\n${csvBody}`;
+    // Добавляем BOM для корректного открытия в Excel с UTF-8
+    const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+    const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.setAttribute('download', `${sheet.name || 'report'}.csv`);
@@ -1805,6 +2201,22 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     link.click();
     document.body.removeChild(link);
   };
+
+  // Автоматически применять автонастройку после изменения даты отчета (один раз на значение даты)
+  const lastAutoResizedDateRef = useRef<string | undefined>(undefined);
+  const isAutoResizeRunningRef = useRef(false);
+  useEffect(() => {
+    if (!isReportSheet) return;
+    if (!reportDate) return;
+    if (isAutoResizeRunningRef.current) return;
+    if (lastAutoResizedDateRef.current === reportDate) return;
+    if (cells.size === 0) return; // ждем загрузку ячеек
+    isAutoResizeRunningRef.current = true;
+    Promise.resolve(handleAutoResize()).finally(() => {
+      lastAutoResizedDateRef.current = reportDate;
+      isAutoResizeRunningRef.current = false;
+    });
+  }, [reportDate, isReportSheet, cells, handleAutoResize]);
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -1815,7 +2227,9 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
         onAddRow={handleAddRow}
         onAddColumn={handleAddColumn}
         onShowHistory={handleShowHistory}
+        onAutoResize={handleAutoResize}
         userPermissions={userPermissions}
+        isReportSheet={isReportSheet}
       />
 
       {/* Кнопки экспорта только для отчетов */}

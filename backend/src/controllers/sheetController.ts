@@ -1173,4 +1173,93 @@ export const resizeRow = async (req: Request, res: Response) => {
       error: 'Ошибка сервера'
     });
   }
+};
+
+// Обновление настроек таблицы (массовое обновление размеров)
+export const updateSettings = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { settings } = req.body;
+    const userId = req.user.id;
+
+    console.log(`🔧 Массовое обновление настроек - Sheet ID: ${id}, User: ${userId}`);
+    console.log(`📊 Новые настройки:`, settings);
+
+    const sheet = await Sheet.findByPk(id);
+    if (!sheet) {
+      console.error(`❌ Таблица не найдена: ${id}`);
+      return res.status(404).json({
+        error: 'Таблица не найдена'
+      });
+    }
+
+    // Проверка доступа к таблице
+    const userSheet = await UserSheet.findOne({
+      where: { userId, sheetId: id }
+    });
+
+    const hasAccess = sheet.createdBy === userId || userSheet;
+
+    if (!hasAccess) {
+      console.error(`❌ Нет доступа к таблице - User: ${userId}, Sheet: ${id}`);
+      return res.status(403).json({
+        error: 'Нет доступа к таблице'
+      });
+    }
+
+    // Обновляем настройки
+    const currentSettings = sheet.settings || {};
+    const updatedSettings = {
+      ...currentSettings,
+      ...settings
+    };
+
+    console.log(`🔄 Обновляем settings - ДО:`, currentSettings);
+    console.log(`🔄 Обновляем settings - ПОСЛЕ:`, updatedSettings);
+
+    // Используем прямой SQL для обновления JSON поля
+    try {
+      const settingsJson = JSON.stringify(updatedSettings);
+      console.log(`🔄 JSON для сохранения:`, settingsJson);
+      
+      const updateQuery = `UPDATE sheets SET settings = ? WHERE id = ?`;
+      await sheet.sequelize?.query(updateQuery, {
+        replacements: [settingsJson, id],
+        type: QueryTypes.UPDATE
+      });
+      
+      console.log(`📝 Использован прямой SQL для сохранения JSON поля`);
+
+      // Перезагружаем sheet из базы для проверки сохранения
+      await sheet.reload();
+      console.log(`✅ Настройки обновлены успешно`);
+      console.log(`🔍 Проверка сохранения - settings в базе:`, sheet.settings);
+
+      res.json({
+        message: 'Настройки обновлены',
+        settings: sheet.settings
+      });
+      
+    } catch (sqlError) {
+      console.error(`❌ Ошибка SQL обновления:`, sqlError);
+      
+      // Fallback - пробуем старый способ
+      sheet.settings = updatedSettings;
+      sheet.changed('settings', true);
+      await sheet.save();
+      await sheet.reload();
+      
+      res.json({
+        message: 'Настройки обновлены (fallback)',
+        settings: sheet.settings
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Ошибка обновления настроек:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера',
+      details: error.message
+    });
+  }
 }; 

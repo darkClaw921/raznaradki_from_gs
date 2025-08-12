@@ -173,7 +173,10 @@ export const sheetsExtendedApi = {
     api.patch(`/sheets/${sheetId}/columns/resize`, { column, width }),
 
   resizeRow: (sheetId: string, row: number, height: number) =>
-    api.patch(`/sheets/${sheetId}/rows/resize`, { row, height })
+    api.patch(`/sheets/${sheetId}/rows/resize`, { row, height }),
+
+  updateSettings: (sheetId: string, settings: any) =>
+    api.patch(`/sheets/${sheetId}/settings`, { settings })
 };
 
 // Users API

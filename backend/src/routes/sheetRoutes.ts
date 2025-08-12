@@ -17,7 +17,8 @@ import {
   getSheetMembers,
   inviteMember,
   resizeColumn,
-  resizeRow
+  resizeRow,
+  updateSettings
 } from '../controllers/sheetController';
 import { requireRole } from '../middleware/auth';
 import { authenticateToken } from '../middleware/auth';
@@ -71,5 +72,8 @@ router.patch('/:id/columns/resize', authenticateToken, resizeColumn);
 
 // Изменение размера строки
 router.patch('/:id/rows/resize', authenticateToken, resizeRow);
+
+// Обновление настроек таблицы (массовое обновление размеров)
+router.patch('/:id/settings', authenticateToken, updateSettings);
 
 export default router; 
