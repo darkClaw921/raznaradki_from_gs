@@ -126,6 +126,11 @@ const Cell: React.FC<CellProps> = ({
     if (format.backgroundColor) styles.backgroundColor = format.backgroundColor;
     if (format.textAlign) styles.textAlign = format.textAlign;
     
+    // Всегда делаем столбец A (column 0) жирным в UI
+    if (column === 0) {
+      styles.fontWeight = 'bold';
+    }
+
     // Поддержка переноса текста
     if (format.whiteSpace) {
       styles.whiteSpace = format.whiteSpace;
@@ -303,7 +308,7 @@ const Cell: React.FC<CellProps> = ({
             padding: '4px 8px',
             fontSize: format.fontSize ? `${format.fontSize}px` : '0.875rem',
             fontFamily: format.fontFamily || 'inherit',
-            fontWeight: format.fontWeight || 'normal',
+            fontWeight: column === 0 ? 'bold' : (format.fontWeight || 'normal'),
             fontStyle: format.fontStyle || 'normal',
             textAlign: format.textAlign || 'left',
           },

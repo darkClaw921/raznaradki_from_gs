@@ -1982,7 +1982,9 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
           cellRef.value = getCellValue(row, col) as any;
         }
 
-        const fmt: any = getCellFormat(row, col) || {};
+        // Для столбца A в Excel делаем шрифт жирным
+        const baseFmt: any = getCellFormat(row, col) || {};
+        const fmt: any = col === 0 ? { ...baseFmt, fontWeight: 'bold' } : baseFmt;
         // Шрифт
         cellRef.font = {
           name: fmt.fontFamily || undefined,
@@ -2133,7 +2135,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       headerMasters.forEach(([r, c]) => {
         const cell = worksheet.getCell(r, c);
         cell.alignment = { ...(cell.alignment || {}), horizontal: 'center', vertical: 'middle' } as any;
-        cell.font = { ...(cell.font || {}), bold: true } as any;
+        cell.font = { ...(cell.font || {}), bold: true, size: 16 } as any;
       });
     }
 
@@ -2296,7 +2298,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
                   backgroundColor: '#f5f5f5',
                   border: '1px solid #e0e0e0',
                   fontWeight: 'bold',
-                  fontSize: '0.95rem',
+                  fontSize: '16px',
                   textAlign: 'center',
                 }}
               >
@@ -2314,7 +2316,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
                   border: '1px solid #e0e0e0',
                   borderLeft: sheet?.template?.name === 'Отчет заселения/выселения DMD Cottage' ? '2px solid #000000' : '1px solid #e0e0e0',
                   fontWeight: 'bold',
-                  fontSize: '0.95rem',
+                  fontSize: '16px',
                   textAlign: 'center',
                 }}
               >
@@ -2332,7 +2334,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
                   border: '1px solid #e0e0e0',
                   borderLeft: sheet?.template?.name === 'Отчет заселения/выселения DMD Cottage' ? '2px solid #000000' : '1px solid #e0e0e0',
                   fontWeight: 'bold',
-                  fontSize: '0.95rem',
+                  fontSize: '16px',
                   textAlign: 'center',
                 }}
               >
