@@ -1297,6 +1297,9 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       let hasData = false;
       
       for (let col = 0; col < (sheet.columnCount || 26); col++) {
+        // Пропускаем колонку 15 (Примечания) для шаблона отчета при сортировке
+        if (sheet?.templateId === 2 && col === 15) continue;
+        
         const key = getCellKey(row, col);
         const cell = cells.get(key);
         if (cell) {
@@ -1360,6 +1363,9 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     // Очищаем данные в строках (кроме заголовка)
     for (let row = 1; row < (sheet.rowCount || 100); row++) {
       for (let col = 0; col < (sheet.columnCount || 26); col++) {
+        // Не очищаем колонку 15 (Примечания) для шаблона отчета, так как она скрыта
+        if (sheet?.templateId === 2 && col === 15) continue;
+        
         const key = getCellKey(row, col);
         newCells.delete(key);
       }
@@ -1400,6 +1406,9 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
   const renderColumnHeaders = () => {
     const headers = [];
     for (let col = 0; col < (sheet.columnCount || 26); col++) {
+      // Скрываем колонку 15 (Примечания) для шаблона отчета
+      if (sheet?.templateId === 2 && col === 15) continue;
+      
       const width = getColumnWidth(col);
       const columnName = generateColumnName(col); // Используем правильную генерацию названий
       
@@ -1644,6 +1653,9 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
               const rowHeight = getRowHeight(row);
       
               for (let col = 0; col < (sheet.columnCount || 26); col++) {
+                // Скрываем колонку 15 (Примечания) для шаблона отчета
+                if (sheet?.templateId === 2 && col === 15) continue;
+                
                 const isSelected = selectedCell?.row === row && selectedCell?.column === col;
                 const isEditing = editingCell?.row === row && editingCell?.column === col;
                 const isInRange = isInSelectedRange(row, col);
@@ -1759,6 +1771,9 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     let maxHeight = MIN_HEIGHT;
     const maxCols = Math.min(sheet.columnCount || 26, 50);
     for (let col = 0; col < maxCols; col++) {
+      // Пропускаем колонку 15 (Примечания) для шаблона отчета
+      if (sheet?.templateId === 2 && col === 15) continue;
+      
       const cell = cells.get(`${row}-${col}`);
       if (!cell?.value) continue;
       const columnWidth = getColumnWidth(col);
@@ -1789,6 +1804,9 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       // Полный охват столбцов
       const maxCols = sheet.columnCount || 26;
       for (let col = 0; col < maxCols; col++) {
+        // Пропускаем колонку 15 (Примечания) для шаблона отчета
+        if (sheet?.templateId === 2 && col === 15) continue;
+        
         const optimalWidth = calculateOptimalColumnWidth(col);
         if (optimalWidth !== getColumnWidth(col)) newColumnSizes[col] = optimalWidth;
       }
@@ -1956,7 +1974,15 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
 
     // Установка ширин столбцов (по Column.width) и fallback на минимальное значение
     for (let col = 0; col < totalCols; col++) {
-      const widthPx = Math.max(20, getColumnWidth(col));
+      let sourceCol = col;
+      // Для шаблона отчета: в позицию колонки 15 записываем ширину из колонки 16
+      if (sheet?.templateId === 2 && col === 15) {
+        sourceCol = 16;
+      }
+      // Пропускаем колонку 16 для шаблона отчета (её ширина уже записана в позицию 15)
+      if (sheet?.templateId === 2 && col === 16) continue;
+      
+      const widthPx = Math.max(20, getColumnWidth(sourceCol));
       const width = pxToExcelColWidth(widthPx);
       const colRef = worksheet.getColumn(col + 1);
       colRef.width = Math.max(2, width);
@@ -1974,16 +2000,24 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     // Заполнение значений и применение форматирования
     for (let row = 0; row < totalRows; row++) {
       for (let col = 0; col < totalCols; col++) {
+        let sourceCol = col;
+        // Для шаблона отчета: в позицию колонки 15 записываем данные из колонки 16
+        if (sheet?.templateId === 2 && col === 15) {
+          sourceCol = 16;
+        }
+        // Пропускаем колонку 16 для шаблона отчета (она уже записана в позицию 15)
+        if (sheet?.templateId === 2 && col === 16) continue;
+        
         const cellRef = worksheet.getCell(row + 1, col + 1);
         // Не записываем значения в первую строку для отчета — она будет задаться вручную ниже
         if (sheet?.template?.name?.includes('Отчет') && row === 0) {
           cellRef.value = null;
         } else {
-          cellRef.value = getCellValue(row, col) as any;
+          cellRef.value = getCellValue(row, sourceCol) as any;
         }
 
         // Для столбца A в Excel делаем шрифт жирным
-        const baseFmt: any = getCellFormat(row, col) || {};
+        const baseFmt: any = getCellFormat(row, sourceCol) || {};
         const fmt: any = col === 0 ? { ...baseFmt, fontWeight: 'bold' } : baseFmt;
         // Шрифт
         cellRef.font = {
@@ -2186,7 +2220,15 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     for (let row = 0; row < (sheet.rowCount || 100); row++) {
       const rowData: any[] = [];
       for (let col = 0; col < (sheet.columnCount || 26); col++) {
-        rowData.push(getCellValue(row, col));
+        let sourceCol = col;
+        // Для шаблона отчета: в позицию колонки 15 записываем данные из колонки 16
+        if (sheet?.templateId === 2 && col === 15) {
+          sourceCol = 16;
+        }
+        // Пропускаем колонку 16 для шаблона отчета (она уже записана в позицию 15)
+        if (sheet?.templateId === 2 && col === 16) continue;
+        
+        rowData.push(getCellValue(row, sourceCol));
       }
       data.push(rowData);
     }
@@ -2322,10 +2364,10 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
               >
                 Выселение
               </Box>
-              {/* G1:Q1 (6-16) - Заселение */}
+              {/* G1:Q1 (6-16) - Заселение, исключая колонку 15 */}
               <Box
                 sx={{
-                  width: Array.from({length: 11}, (_, i) => getColumnWidth(i+6)).reduce((a,b)=>a+b,0),
+                  width: Array.from({length: 11}, (_, i) => i+6).filter(col => col !== 15).map(col => getColumnWidth(col)).reduce((a,b)=>a+b,0),
                   height: 30,
                   display: 'flex',
                   alignItems: 'center',
