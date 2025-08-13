@@ -81,6 +81,7 @@ const handleReverseSync = async (sheetId: number, row: number, column: number, v
     // Обновляем столбец 12 (комментарии по оплате) в журнале для каждой найденной строки
     for (const guestCell of journalCells) {
       const journalRow = guestCell.row;
+      const linkedBookingId = guestCell.bookingId || null;
       
       // Находим или создаем ячейку в столбце 12 журнала
       let dayCommentsCell = await Cell.findOne({
@@ -92,7 +93,11 @@ const handleReverseSync = async (sheetId: number, row: number, column: number, v
       });
 
       if (dayCommentsCell) {
-        await dayCommentsCell.update({ value });
+        const updatePayload: any = { value };
+        if (linkedBookingId && !dayCommentsCell.bookingId) {
+          updatePayload.bookingId = linkedBookingId;
+        }
+        await dayCommentsCell.update(updatePayload);
         console.log(`✅ Обновлена ячейка журнала [${journalRow}, 12] в таблице ${sourceSheetId}: "${value}"`);
       } else {
         dayCommentsCell = await Cell.create({
@@ -102,7 +107,8 @@ const handleReverseSync = async (sheetId: number, row: number, column: number, v
           value,
           formula: null,
           format: null,
-          isLocked: false
+          isLocked: false,
+          bookingId: linkedBookingId || undefined
         });
         console.log(`✅ Создана ячейка журнала [${journalRow}, 12] в таблице ${sourceSheetId}: "${value}"`);
       }
