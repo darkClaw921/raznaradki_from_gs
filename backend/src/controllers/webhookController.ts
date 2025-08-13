@@ -74,7 +74,8 @@ export const processWebhook = async (req: Request, res: Response) => {
     });
 
     if (!webhookEnabledSetting || webhookEnabledSetting.value !== 'true') {
-      return res.status(403).json({ message: 'Webhook отключен' });
+      console.log('Webhook отключен — запрос принят, но не обработан. Возвращаем 200.');
+      return res.json({ message: 'Webhook принят, но отключен на сервере' });
     }
 
     // Проверяем корректность webhook ID
@@ -83,13 +84,15 @@ export const processWebhook = async (req: Request, res: Response) => {
     });
 
     if (!webhookSecretSetting || webhookSecretSetting.value !== webhookId) {
-      return res.status(401).json({ message: 'Неверный webhook ID' });
+      console.log('Неверный webhook ID — запрос принят, но не обработан. Возвращаем 200.');
+      return res.json({ message: 'Webhook принят, но webhook ID некорректен' });
     }
 
     // Извлекаем данные бронирования
     const bookingData = extractBookingData(webhookData);
     if (!bookingData) {
-      return res.status(400).json({ message: 'Некорректные данные webhook' });
+      console.log('Некорректные/неподдерживаемые данные webhook — запрос принят. Возвращаем 200.');
+      return res.json({ message: 'Webhook принят, но данные не соответствуют ожидаемому формату' });
     }
 
     // Находим таблицы, которые должны получить эти данные
@@ -110,7 +113,7 @@ export const processWebhook = async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('Ошибка при обработке webhook:', error);
-    res.status(500).json({ message: 'Ошибка при обработке webhook' });
+    res.json({ message: 'Webhook принят, но при обработке произошла ошибка' });
   }
 };
 
