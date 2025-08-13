@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { Cell, Sheet, UserSheet, CellHistory, User, ReportSource, SheetTemplate } from '../models';
+import { Op } from 'sequelize';
 import { updateLinkedReports } from './sheetTemplateController';
 
 // Обратная синхронизация изменений из отчета в журнал
@@ -11,7 +12,7 @@ const handleReverseSync = async (sheetId: number, row: number, column: number, v
     if (!currentSheet) return;
 
     // Проверяем, что это отчет заселения/выселения и изменяется столбец 16
-    const isReport = currentSheet.name?.includes('Отчет');
+    const isReport = currentSheet.templateId === 2; // Шаблон "Отчет заселения/выселения DMD Cottage"
     const isDayCommentsColumn = column === 16;
 
     if (!isReport || !isDayCommentsColumn) return;
@@ -181,7 +182,7 @@ export const updateCell = async (req: Request, res: Response) => {
     let oldFormula = '';
     let oldFormat = {};
 
-          if (cell) {
+    if (cell) {
         // Сохраняем предыдущие значения для истории
         oldValue = cell.value || '';
         oldFormula = cell.formula || '';
@@ -218,10 +219,177 @@ export const updateCell = async (req: Request, res: Response) => {
       if (formula !== undefined) updateData.formula = formula;
       if (format !== undefined) updateData.format = format;
 
+      // Автопроставление bookingId для отчета при изменении колонки 16
+      try {
+        const currentSheet = await Sheet.findByPk(sheetId);
+        const isReportSheet = currentSheet?.templateId === 2; // Шаблон "Отчет заселения/выселения DMD Cottage"
+        const isDayCommentsCol = colNum === 16;
+        
+        console.log(`🔍 Автопроставление bookingId: sheet="${currentSheet?.name}", isReport=${isReportSheet}, col=${colNum}, isDayComments=${isDayCommentsCol}, currentBookingId=${cell.bookingId}`);
+        
+        if (isReportSheet && isDayCommentsCol && !cell.bookingId) {
+          console.log(`🔍 Ищем bookingId в строке ${rowNum} таблицы ${sheetId}`);
+          
+          const rowCellWithBooking = await Cell.findOne({
+            where: {
+              sheetId,
+              row: rowNum,
+              bookingId: { [Op.not]: null }
+            }
+          });
+          
+          if (rowCellWithBooking?.bookingId) {
+            console.log(`✅ Найден bookingId в строке: ${rowCellWithBooking.bookingId}`);
+            updateData.bookingId = rowCellWithBooking.bookingId;
+          } else {
+            console.log(`🔍 BookingId не найден в строке, ищем через связанный журнал`);
+            
+            // Фолбэк: получаем bookingId из связанного журнала по адресу и ФИО
+            const reportRowCells = await Cell.findAll({
+              where: { sheetId, row: rowNum },
+              order: [['column', 'ASC']]
+            });
+            
+            let guestName = '';
+            let address = '';
+            reportRowCells.forEach(rc => {
+              if (rc.column === 0) address = rc.value || '';
+              if (rc.column === 6) guestName = rc.value || '';
+            });
+            
+            console.log(`🔍 Данные из отчета: address="${address}", guestName="${guestName}"`);
+            
+            if (guestName && address) {
+              const reportSources = await ReportSource.findAll({
+                where: { reportSheetId: parseInt(sheetId) },
+                include: [
+                  {
+                    model: Sheet,
+                    as: 'sourceSheet',
+                    attributes: ['id', 'name']
+                  }
+                ]
+              });
+              
+              console.log(`🔍 Найдено связей с журналами: ${reportSources.length}`);
+              
+              const matchingSource = reportSources.find(source => {
+                const sourceSheet = (source as any).sourceSheet;
+                return sourceSheet?.name === address;
+              });
+              
+              const sourceSheetId = matchingSource?.sourceSheetId;
+              console.log(`🔍 Найден журнал "${address}": ${sourceSheetId ? `ID ${sourceSheetId}` : 'не найден'}`);
+              
+              if (sourceSheetId) {
+                const guestCellInJournal = await Cell.findOne({
+                  where: { sheetId: sourceSheetId, column: 4, value: guestName }
+                });
+                
+                if (guestCellInJournal?.bookingId) {
+                  console.log(`✅ Найден bookingId в журнале: ${guestCellInJournal.bookingId}`);
+                  updateData.bookingId = guestCellInJournal.bookingId;
+                } else {
+                  console.log(`❌ BookingId не найден в журнале для гостя "${guestName}"`);
+                }
+              }
+            } else {
+              console.log(`❌ Недостаточно данных для поиска: address="${address}", guestName="${guestName}"`);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Ошибка автопроставления bookingId (updateCell):', e);
+      }
+
       if (Object.keys(updateData).length > 0) {
         await cell.update(updateData);
       }
     } else {
+      // Автопроставление bookingId для отчета при создании ячейки колонки 16
+      let bookingIdToSet: number | undefined = undefined;
+      try {
+        const currentSheet = await Sheet.findByPk(sheetId);
+        const isReportSheet = currentSheet?.templateId === 2; // Шаблон "Отчет заселения/выселения DMD Cottage"
+        const isDayCommentsCol = colNum === 16;
+        
+        console.log(`🔍 Создание ячейки с bookingId: sheet="${currentSheet?.name}", isReport=${isReportSheet}, col=${colNum}, isDayComments=${isDayCommentsCol}`);
+        
+        if (isReportSheet && isDayCommentsCol) {
+          console.log(`🔍 Ищем bookingId для новой ячейки в строке ${rowNum} таблицы ${sheetId}`);
+          
+          const rowCellWithBooking = await Cell.findOne({
+            where: {
+              sheetId,
+              row: rowNum,
+              bookingId: { [Op.not]: null }
+            }
+          });
+          
+          if (rowCellWithBooking?.bookingId) {
+            console.log(`✅ Найден bookingId в строке для новой ячейки: ${rowCellWithBooking.bookingId}`);
+            bookingIdToSet = rowCellWithBooking.bookingId as number;
+          } else {
+            console.log(`🔍 BookingId не найден в строке для новой ячейки, ищем через связанный журнал`);
+            
+            // Фолбэк: получаем bookingId из связанного журнала по адресу и ФИО
+            const reportRowCells = await Cell.findAll({
+              where: { sheetId, row: rowNum },
+              order: [['column', 'ASC']]
+            });
+            
+            let guestName = '';
+            let address = '';
+            reportRowCells.forEach(rc => {
+              if (rc.column === 0) address = rc.value || '';
+              if (rc.column === 6) guestName = rc.value || '';
+            });
+            
+            console.log(`🔍 Данные из отчета для новой ячейки: address="${address}", guestName="${guestName}"`);
+            
+            if (guestName && address) {
+              const reportSources = await ReportSource.findAll({
+                where: { reportSheetId: parseInt(sheetId) },
+                include: [
+                  {
+                    model: Sheet,
+                    as: 'sourceSheet',
+                    attributes: ['id', 'name']
+                  }
+                ]
+              });
+              
+              console.log(`🔍 Найдено связей с журналами для новой ячейки: ${reportSources.length}`);
+              
+              const matchingSource = reportSources.find(source => {
+                const sourceSheet = (source as any).sourceSheet;
+                return sourceSheet?.name === address;
+              });
+              
+              const sourceSheetId = matchingSource?.sourceSheetId;
+              console.log(`🔍 Найден журнал для новой ячейки "${address}": ${sourceSheetId ? `ID ${sourceSheetId}` : 'не найден'}`);
+              
+              if (sourceSheetId) {
+                const guestCellInJournal = await Cell.findOne({
+                  where: { sheetId: sourceSheetId, column: 4, value: guestName }
+                });
+                
+                if (guestCellInJournal?.bookingId) {
+                  console.log(`✅ Найден bookingId в журнале для новой ячейки: ${guestCellInJournal.bookingId}`);
+                  bookingIdToSet = guestCellInJournal.bookingId as number;
+                } else {
+                  console.log(`❌ BookingId не найден в журнале для новой ячейки для гостя "${guestName}"`);
+                }
+              }
+            } else {
+              console.log(`❌ Недостаточно данных для поиска новой ячейки: address="${address}", guestName="${guestName}"`);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Ошибка автопроставления bookingId при создании (updateCell):', e);
+      }
+
       cell = await Cell.create({
         sheetId: parseInt(sheetId),
         row: rowNum,
@@ -229,7 +397,8 @@ export const updateCell = async (req: Request, res: Response) => {
         value: value || '',
         formula: formula || null,
         format: format || null,
-        isLocked: false
+        isLocked: false,
+        bookingId: bookingIdToSet
       });
 
       // Создаем запись в истории для новой ячейки
@@ -544,12 +713,128 @@ export const updateCellsBatch = async (req: Request, res: Response) => {
         if (value !== undefined) updateData.value = value;
         if (formula !== undefined) updateData.formula = formula;
 
+        // Автопроставление bookingId для отчетов при изменении колонки 16
+        try {
+          const currentSheet = await Sheet.findByPk(sheetId);
+          const isReportSheet = currentSheet?.name?.includes('Отчет');
+          const isDayCommentsCol = colNum === 16;
+          if (isReportSheet && isDayCommentsCol && !cell.bookingId) {
+            const rowCellWithBooking = await Cell.findOne({
+              where: {
+                sheetId,
+                row: rowNum,
+                bookingId: { [Op.not]: null }
+              }
+            });
+            if (rowCellWithBooking?.bookingId) {
+              updateData.bookingId = rowCellWithBooking.bookingId;
+            } else {
+              // Фолбэк: получаем bookingId из связанного журнала по адресу и ФИО
+              const reportRowCells = await Cell.findAll({
+                where: { sheetId, row: rowNum },
+                order: [['column', 'ASC']]
+              });
+              let guestName = '';
+              let address = '';
+              reportRowCells.forEach(rc => {
+                if (rc.column === 0) address = rc.value || '';
+                if (rc.column === 6) guestName = rc.value || '';
+              });
+              if (guestName && address) {
+                const reportSources = await ReportSource.findAll({
+                  where: { reportSheetId: parseInt(sheetId) },
+                  include: [
+                    {
+                      model: Sheet,
+                      as: 'sourceSheet',
+                      attributes: ['id', 'name']
+                    }
+                  ]
+                });
+                const matchingSource = reportSources.find(source => {
+                  const sourceSheet = (source as any).sourceSheet;
+                  return sourceSheet?.name === address;
+                });
+                const sourceSheetId = matchingSource?.sourceSheetId;
+                if (sourceSheetId) {
+                  const guestCellInJournal = await Cell.findOne({
+                    where: { sheetId: sourceSheetId, column: 4, value: guestName }
+                  });
+                  if (guestCellInJournal?.bookingId) {
+                    updateData.bookingId = guestCellInJournal.bookingId;
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Ошибка автопроставления bookingId (updateCellsBatch):', e);
+        }
+
         if (Object.keys(updateData).length > 0) {
           await cell.update(updateData);
           updatedCells.push(cell);
         }
       } else {
         // Создаем новую ячейку
+        let bookingIdToSet: number | undefined = undefined;
+        try {
+          const currentSheet = await Sheet.findByPk(sheetId);
+          const isReportSheet = currentSheet?.name?.includes('Отчет');
+          const isDayCommentsCol = colNum === 16;
+          if (isReportSheet && isDayCommentsCol) {
+            const rowCellWithBooking = await Cell.findOne({
+              where: {
+                sheetId,
+                row: rowNum,
+                bookingId: { [Op.not]: null }
+              }
+            });
+            if (rowCellWithBooking?.bookingId) {
+              bookingIdToSet = rowCellWithBooking.bookingId as number;
+            } else {
+              // Фолбэк: получаем bookingId из связанного журнала по адресу и ФИО
+              const reportRowCells = await Cell.findAll({
+                where: { sheetId, row: rowNum },
+                order: [['column', 'ASC']]
+              });
+              let guestName = '';
+              let address = '';
+              reportRowCells.forEach(rc => {
+                if (rc.column === 0) address = rc.value || '';
+                if (rc.column === 6) guestName = rc.value || '';
+              });
+              if (guestName && address) {
+                const reportSources = await ReportSource.findAll({
+                  where: { reportSheetId: parseInt(sheetId) },
+                  include: [
+                    {
+                      model: Sheet,
+                      as: 'sourceSheet',
+                      attributes: ['id', 'name']
+                    }
+                  ]
+                });
+                const matchingSource = reportSources.find(source => {
+                  const sourceSheet = (source as any).sourceSheet;
+                  return sourceSheet?.name === address;
+                });
+                const sourceSheetId = matchingSource?.sourceSheetId;
+                if (sourceSheetId) {
+                  const guestCellInJournal = await Cell.findOne({
+                    where: { sheetId: sourceSheetId, column: 4, value: guestName }
+                  });
+                  if (guestCellInJournal?.bookingId) {
+                    bookingIdToSet = guestCellInJournal.bookingId as number;
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Ошибка автопроставления bookingId при создании (updateCellsBatch):', e);
+        }
+
         cell = await Cell.create({
           sheetId: parseInt(sheetId),
           row: rowNum,
@@ -557,7 +842,8 @@ export const updateCellsBatch = async (req: Request, res: Response) => {
           value: value || '',
           formula: formula || null,
           format: null,
-          isLocked: false
+          isLocked: false,
+          bookingId: bookingIdToSet
         });
 
         // Создаем запись в истории для новой ячейки
