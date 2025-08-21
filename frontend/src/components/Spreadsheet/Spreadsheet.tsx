@@ -587,10 +587,20 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     if (cell.formula && cell.formula.startsWith('=')) {
         const engine = new FormulaEngine(cells);
       const result = engine.evaluate(cell.formula);
-      return result.toString();
+      let out = result.toString();
+      // Отчет: значения в колонке A (0) начиная с 3-й строки — UPPER CASE
+      if (sheet?.templateId === 2 && column === 0 && row >= 2) {
+        out = out.toString().toUpperCase();
+      }
+      return out;
       }
     
-    return cell.value || '';
+    let out = cell.value || '';
+    // Отчет: значения в колонке A (0) начиная с 3-й строки — UPPER CASE
+    if (sheet?.templateId === 2 && column === 0 && row >= 2) {
+      out = out.toUpperCase();
+    }
+    return out;
   };
 
   const getCellFormat = (row: number, column: number): any => {
@@ -1406,8 +1416,8 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
   const renderColumnHeaders = () => {
     const headers = [];
     for (let col = 0; col < (sheet.columnCount || 26); col++) {
-      // Скрываем колонку 15 (Примечания) для шаблона отчета
-      if (sheet?.templateId === 2 && col === 15) continue;
+      // Скрываем колонки 5 (Время выселения), 8 (Время заселения), 15 (Примечания) для шаблона отчета
+      if (sheet?.templateId === 2 && (col === 5 || col === 8 || col === 15)) continue;
       
       const width = getColumnWidth(col);
       const columnName = generateColumnName(col); // Используем правильную генерацию названий
@@ -1653,14 +1663,18 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
               const rowHeight = getRowHeight(row);
       
               for (let col = 0; col < (sheet.columnCount || 26); col++) {
-                // Скрываем колонку 15 (Примечания) для шаблона отчета
-                if (sheet?.templateId === 2 && col === 15) continue;
+                // Скрываем колонки 5 (Время выселения), 8 (Время заселения), 15 (Примечания) для шаблона отчета
+                if (sheet?.templateId === 2 && (col === 5 || col === 8 || col === 15)) continue;
                 
                 const isSelected = selectedCell?.row === row && selectedCell?.column === col;
                 const isEditing = editingCell?.row === row && editingCell?.column === col;
                 const isInRange = isInSelectedRange(row, col);
                 const isInClipboard = isInClipboardRange(row, col);
                 const cellFormat = getCellFormat(row, col);
+                // Увеличиваем шрифт для второй строки отчета в UI
+                const effectiveFormat = (sheet?.templateId === 2 && row === 1)
+                  ? { ...cellFormat, fontSize: Math.max(Number(cellFormat?.fontSize || 0), 16) }
+                  : cellFormat;
                 const columnWidth = getColumnWidth(col);
                 
                 cells.push(
@@ -1669,7 +1683,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
                     row={row}
                     column={col}
                     value={getCellValue(row, col)}
-                    format={cellFormat}
+                    format={effectiveFormat}
                     isSelected={isSelected}
                     isInRange={isInRange}
                     isInClipboard={isInClipboard}
@@ -1771,8 +1785,8 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     let maxHeight = MIN_HEIGHT;
     const maxCols = Math.min(sheet.columnCount || 26, 50);
     for (let col = 0; col < maxCols; col++) {
-      // Пропускаем колонку 15 (Примечания) для шаблона отчета
-      if (sheet?.templateId === 2 && col === 15) continue;
+      // Пропускаем колонки 5, 8, 15 для шаблона отчета
+      if (sheet?.templateId === 2 && (col === 5 || col === 8 || col === 15)) continue;
       
       const cell = cells.get(`${row}-${col}`);
       if (!cell?.value) continue;
@@ -1804,8 +1818,8 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       // Полный охват столбцов
       const maxCols = sheet.columnCount || 26;
       for (let col = 0; col < maxCols; col++) {
-        // Пропускаем колонку 15 (Примечания) для шаблона отчета
-        if (sheet?.templateId === 2 && col === 15) continue;
+        // Пропускаем колонки 5, 8, 15 для шаблона отчета
+        if (sheet?.templateId === 2 && (col === 5 || col === 8 || col === 15)) continue;
         
         const optimalWidth = calculateOptimalColumnWidth(col);
         if (optimalWidth !== getColumnWidth(col)) newColumnSizes[col] = optimalWidth;
@@ -1972,20 +1986,23 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     const totalRows = sheet.rowCount || 100;
     const totalCols = sheet.columnCount || 26;
 
-    // Установка ширин столбцов (по Column.width) и fallback на минимальное значение
+    // Установка ширин столбцов с учетом смещения для скрытых колонок
+    let excelCol = 1; // Позиция в Excel (1-based)
     for (let col = 0; col < totalCols; col++) {
+      // Пропускаем скрытые колонки для шаблона отчета
+      if (sheet?.templateId === 2 && (col === 5 || col === 8 || col === 15)) continue;
+      
       let sourceCol = col;
-      // Для шаблона отчета: в позицию колонки 15 записываем ширину из колонки 16
-      if (sheet?.templateId === 2 && col === 15) {
+      // Для шаблона отчета: колонка 16 записывается на место колонки 15
+      if (sheet?.templateId === 2 && col === 16) {
         sourceCol = 16;
       }
-      // Пропускаем колонку 16 для шаблона отчета (её ширина уже записана в позицию 15)
-      if (sheet?.templateId === 2 && col === 16) continue;
       
       const widthPx = Math.max(20, getColumnWidth(sourceCol));
       const width = pxToExcelColWidth(widthPx);
-      const colRef = worksheet.getColumn(col + 1);
+      const colRef = worksheet.getColumn(excelCol);
       colRef.width = Math.max(2, width);
+      excelCol++;
     }
 
     // Установка высот строк (Row.height в поинтах)
@@ -1997,18 +2014,20 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     const isDMDCottageReport = sheet?.template?.name === 'Отчет заселения/выселения DMD Cottage' ||
                                sheet?.template?.name?.includes('Отчет заселения/выселения DMD Cottage');
 
-    // Заполнение значений и применение форматирования
+    // Заполнение значений и применение форматирования с учетом смещения
     for (let row = 0; row < totalRows; row++) {
+      let excelCol = 1; // Позиция в Excel (1-based)
       for (let col = 0; col < totalCols; col++) {
+        // Пропускаем скрытые колонки для шаблона отчета
+        if (sheet?.templateId === 2 && (col === 5 || col === 8 || col === 15)) continue;
+        
         let sourceCol = col;
-        // Для шаблона отчета: в позицию колонки 15 записываем данные из колонки 16
-        if (sheet?.templateId === 2 && col === 15) {
+        // Для шаблона отчета: колонка 16 записывается на место колонки 15
+        if (sheet?.templateId === 2 && col === 16) {
           sourceCol = 16;
         }
-        // Пропускаем колонку 16 для шаблона отчета (она уже записана в позицию 15)
-        if (sheet?.templateId === 2 && col === 16) continue;
         
-        const cellRef = worksheet.getCell(row + 1, col + 1);
+        const cellRef = worksheet.getCell(row + 1, excelCol);
         // Не записываем значения в первую строку для отчета — она будет задаться вручную ниже
         if (sheet?.template?.name?.includes('Отчет') && row === 0) {
           cellRef.value = null;
@@ -2018,7 +2037,11 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
 
         // Для столбца A в Excel делаем шрифт жирным
         const baseFmt: any = getCellFormat(row, sourceCol) || {};
-        const fmt: any = col === 0 ? { ...baseFmt, fontWeight: 'bold' } : baseFmt;
+        // Увеличиваем шрифт для второй строки отчета в экспорте (минимум 14)
+        const withRow2Inc = (sheet?.templateId === 2 && row === 1)
+          ? { ...baseFmt, fontSize: Math.max(parseFontSize(baseFmt.fontSize || 0) || 0, 14) }
+          : baseFmt;
+        const fmt: any = col === 0 ? { ...withRow2Inc, fontWeight: 'bold' } : withRow2Inc;
         // Шрифт
         cellRef.font = {
           name: fmt.fontFamily || undefined,
@@ -2070,6 +2093,8 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
             left: { style: 'medium', color: { argb: 'FF000000' } }
           } as any;
         }
+        
+        excelCol++;
       }
     }
 
@@ -2121,16 +2146,30 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     const overlaps = (a: {r1:number;c1:number;r2:number;c2:number}, b: {r1:number;c1:number;r2:number;c2:number}) => {
       return !(a.r2 < b.r1 || a.r1 > b.r2 || a.c2 < b.c1 || a.c1 > b.c2);
     };
-    // Явные merges для шапки отчета — только если в пределах границ и не перекрывают уже существующие диапазоны
+    // Явные merges для шапки отчета с учетом смещения колонок
     if (sheet?.template?.name?.includes('Отчет')) {
-      const r1 = { r1: 0, c1: 0, r2: 0, c2: Math.min(1, totalCols - 1) };
-      const r2 = { r1: 0, c1: 2, r2: 0, c2: Math.min(5, totalCols - 1) };
-      const r3 = { r1: 0, c1: 6, r2: 0, c2: Math.min(16, totalCols - 1) };
-      const ranges = [r1, r2, r3];
-      for (const r of ranges) {
-        if (r.c1 <= r.c2 && r.r1 <= r.r2) {
-          const conflict = mergeRanges.some((m) => overlaps(m, r));
-          if (!conflict) addMerge(r.r1, r.c1, r.r2, r.c2);
+      // Рассчитываем новые позиции с учетом скрытых колонок
+      // Исходные: A1:B1 (0-1), C1:E1 (2-4), F1:P1 (6-13 после исключения 5,8,15)
+      const visibleCols = [];
+      for (let col = 0; col < totalCols; col++) {
+        if (sheet?.templateId === 2 && (col === 5 || col === 8 || col === 15)) continue;
+        visibleCols.push(col);
+      }
+      
+      if (visibleCols.length > 0) {
+        // A1:B1 остается 0:1
+        const r1 = { r1: 0, c1: 0, r2: 0, c2: Math.min(1, visibleCols.length - 1) };
+        // C1:E1 становится 2:4 (колонки 2,3,4 - исключена 5)
+        const r2 = { r1: 0, c1: 2, r2: 0, c2: Math.min(4, visibleCols.length - 1) };
+        // F1:... начинается с колонки 5 в экспорте (была 6, но 5 исключена)
+        const r3 = { r1: 0, c1: 5, r2: 0, c2: visibleCols.length - 1 };
+        
+        const ranges = [r1, r2, r3];
+        for (const r of ranges) {
+          if (r.c1 <= r.c2 && r.r1 <= r.r2 && r.c2 < visibleCols.length) {
+            const conflict = mergeRanges.some((m) => overlaps(m, r));
+            if (!conflict) addMerge(r.r1, r.c1, r.r2, r.c2);
+          }
         }
       }
     }
@@ -2146,30 +2185,30 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       }
     }
 
-    // Специальная дата отчета в A1 — после мерджей
+    // Специальная дата отчета в A1 — после мерджей с учетом смещения
     if (sheet?.template?.name?.includes('Отчет')) {
       const a1 = worksheet.getCell(1, 1);
       a1.value = getReportDateString();
-      if (totalCols > 1) {
-        try { worksheet.getCell(1, 2).value = null; } catch {}
-      }
-      // Устанавливаем значения заголовков для слитых блоков C1:F1 и G1:Q1
-      if (totalCols > 2) {
-        const c1 = worksheet.getCell(1, 3);
-        c1.value = 'Выселение';
-      }
-      if (totalCols > 6) {
-        const g1 = worksheet.getCell(1, 7);
-        g1.value = 'Заселение';
-      }
+      
+      // Устанавливаем значения заголовков для слитых блоков с учетом смещения
+      // C1 теперь на позиции 3 (колонка 2 исходная + 1)
+      const c1 = worksheet.getCell(1, 3);
+      c1.value = 'Выселение';
+      
+      // G1 теперь на позиции 6 (была колонка 6, но после исключения 5 стала позицией 6)
+      const g1 = worksheet.getCell(1, 6);
+      g1.value = 'Заселение';
+      
       // Выравнивание шапки по центру для мастер-ячейки каждого слитого заголовка
-      const headerMasters: Array<[number, number]> = [[1, 1]];
-      if (totalCols > 2) headerMasters.push([1, 3]);
-      if (totalCols > 6) headerMasters.push([1, 7]);
+      const headerMasters: Array<[number, number]> = [[1, 1], [1, 3], [1, 6]];
       headerMasters.forEach(([r, c]) => {
-        const cell = worksheet.getCell(r, c);
-        cell.alignment = { ...(cell.alignment || {}), horizontal: 'center', vertical: 'middle' } as any;
-        cell.font = { ...(cell.font || {}), bold: true, size: 16 } as any;
+        try {
+          const cell = worksheet.getCell(r, c);
+          cell.alignment = { ...(cell.alignment || {}), horizontal: 'center', vertical: 'middle' } as any;
+          cell.font = { ...(cell.font || {}), bold: true, size: 16 } as any;
+        } catch (e) {
+          // Игнорируем ошибки если ячейка не существует
+        }
       });
     }
 
@@ -2182,10 +2221,17 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       }
     }
 
-    // Границы второй строки (часто это строка заголовков колонок отчета)
-    if (sheet?.template?.name?.includes('Отчет') && (totalCols > 0 && totalRows > 1)) {
+    // Границы второй строки с учетом смещения колонок
+    if (sheet?.template?.name?.includes('Отчет') && totalRows > 1) {
       const thin = { style: 'thin', color: { argb: 'FF000000' } } as any;
-      for (let c = 1; c <= totalCols; c++) {
+      // Рассчитываем количество видимых колонок
+      let visibleColCount = 0;
+      for (let col = 0; col < totalCols; col++) {
+        if (sheet?.templateId === 2 && (col === 5 || col === 8 || col === 15)) continue;
+        visibleColCount++;
+      }
+      
+      for (let c = 1; c <= visibleColCount; c++) {
         const cell = worksheet.getCell(2, c);
         cell.border = {
           top: thin,
@@ -2220,13 +2266,14 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     for (let row = 0; row < (sheet.rowCount || 100); row++) {
       const rowData: any[] = [];
       for (let col = 0; col < (sheet.columnCount || 26); col++) {
+        // Пропускаем скрытые колонки для шаблона отчета
+        if (sheet?.templateId === 2 && (col === 5 || col === 8 || col === 15)) continue;
+        
         let sourceCol = col;
-        // Для шаблона отчета: в позицию колонки 15 записываем данные из колонки 16
-        if (sheet?.templateId === 2 && col === 15) {
+        // Для шаблона отчета: колонка 16 записывается на место колонки 15
+        if (sheet?.templateId === 2 && col === 16) {
           sourceCol = 16;
         }
-        // Пропускаем колонку 16 для шаблона отчета (она уже записана в позицию 15)
-        if (sheet?.templateId === 2 && col === 16) continue;
         
         rowData.push(getCellValue(row, sourceCol));
       }
@@ -2346,10 +2393,10 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
               >
                 {reportDate ? reportDate.split('-').reverse().join('.') : ''}
               </Box>
-              {/* C1:F1 - Выселение */}
+              {/* C1:F1 - Выселение (исключая колонку 5) */}
               <Box
                 sx={{
-                  width: [2,3,4,5].reduce((acc, col) => acc + getColumnWidth(col), 0),
+                  width: [2,3,4,5].filter(col => !(sheet?.templateId === 2 && col === 5)).reduce((acc, col) => acc + getColumnWidth(col), 0),
                   height: 30,
                   display: 'flex',
                   alignItems: 'center',
@@ -2364,10 +2411,10 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
               >
                 Выселение
               </Box>
-              {/* G1:Q1 (6-16) - Заселение, исключая колонку 15 */}
+              {/* G1:Q1 (6-16) - Заселение, исключая колонки 8 и 15 */}
               <Box
                 sx={{
-                  width: Array.from({length: 11}, (_, i) => i+6).filter(col => col !== 15).map(col => getColumnWidth(col)).reduce((a,b)=>a+b,0),
+                  width: Array.from({length: 11}, (_, i) => i+6).filter(col => !(sheet?.templateId === 2 && (col === 8 || col === 15))).map(col => getColumnWidth(col)).reduce((a,b)=>a+b,0),
                   height: 30,
                   display: 'flex',
                   alignItems: 'center',
