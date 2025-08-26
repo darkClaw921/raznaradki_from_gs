@@ -97,12 +97,27 @@ export const processWebhook = async (req: Request, res: Response) => {
 
     const { action, bookingData } = webhookInfo;
 
-    // Находим таблицы, которые должны получить эти данные
-    const targetSheets = await findTargetSheets(bookingData.apartmentTitle);
+    // Находим таблицы в зависимости от типа действия
+    let targetSheets = [];
+    
+    if (action === 'delete_booking') {
+      // Для удаления ищем таблицы по booking_id во всех активных таблицах
+      targetSheets = await findSheetsByBookingId(bookingData.id);
+      console.log(`🔍 Поиск таблиц для удаления бронирования ID ${bookingData.id}`);
+    } else {
+      // Для создания/обновления ищем по названию апартамента
+      targetSheets = await findTargetSheets(bookingData.apartmentTitle);
+      console.log(`🔍 Поиск таблиц для апартамента: ${bookingData.apartmentTitle}`);
+    }
     
     if (targetSheets.length === 0) {
-      console.log(`Не найдено таблиц для апартаментов: ${bookingData.apartmentTitle}`);
-      return res.json({ message: 'Данные обработаны, но подходящих таблиц не найдено' });
+      if (action === 'delete_booking') {
+        console.log(`❌ Не найдено таблиц с бронированием ID ${bookingData.id}`);
+        return res.json({ message: 'Данные обработаны, но подходящих таблиц не найдено' });
+      } else {
+        console.log(`❌ Не найдено таблиц для апартаментов: ${bookingData.apartmentTitle}`);
+        return res.json({ message: 'Данные обработаны, но подходящих таблиц не найдено' });
+      }
     }
 
     // Обрабатываем действие в зависимости от типа
@@ -111,13 +126,13 @@ export const processWebhook = async (req: Request, res: Response) => {
       for (const sheet of targetSheets) {
         await deleteBookingFromSheet(sheet, bookingData);
       }
-      console.log(`Бронирование удалено из ${targetSheets.length} таблиц`);
+      console.log(`🗑️ Бронирование удалено из ${targetSheets.length} таблиц`);
     } else {
       // Добавляем или обновляем данные бронирования в каждую подходящую таблицу
       for (const sheet of targetSheets) {
         await addBookingToSheet(sheet, bookingData);
       }
-      console.log(`Данные бронирования добавлены в ${targetSheets.length} таблиц`);
+      console.log(`✅ Данные бронирования добавлены в ${targetSheets.length} таблиц`);
     }
 
     res.json({ 
@@ -226,6 +241,39 @@ async function findTargetSheets(apartmentTitle: string) {
     return targetSheets;
   } catch (error) {
     console.error('Ошибка при поиске целевых таблиц:', error);
+    return [];
+  }
+}
+
+// Поиск таблиц по booking_id (для удаления)
+async function findSheetsByBookingId(bookingId: number) {
+  try {
+    console.log(`🔍 Поиск таблиц с бронированием ID ${bookingId}`);
+    
+    // Ищем все ячейки с данным booking_id
+    const cellsWithBooking = await Cell.findAll({
+      where: { bookingId: bookingId },
+      attributes: ['sheetId'],
+      group: ['sheetId']
+    });
+
+    if (cellsWithBooking.length === 0) {
+      console.log(`❌ Не найдено ячеек с booking_id ${bookingId}`);
+      return [];
+    }
+
+    const sheetIds = cellsWithBooking.map(cell => cell.sheetId);
+    console.log(`📋 Найдены таблицы с ID: ${sheetIds.join(', ')}`);
+
+    // Получаем информацию о таблицах
+    const sheets = await Sheet.findAll({
+      where: { id: sheetIds }
+    });
+
+    console.log(`✅ Найдено ${sheets.length} таблиц для удаления бронирования ID ${bookingId}`);
+    return sheets;
+  } catch (error) {
+    console.error('❌ Ошибка при поиске таблиц по booking_id:', error);
     return [];
   }
 }
