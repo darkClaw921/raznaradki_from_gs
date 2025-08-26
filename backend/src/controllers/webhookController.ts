@@ -88,12 +88,14 @@ export const processWebhook = async (req: Request, res: Response) => {
       return res.json({ message: 'Webhook принят, но webhook ID некорректен' });
     }
 
-    // Извлекаем данные бронирования
-    const bookingData = extractBookingData(webhookData);
-    if (!bookingData) {
+    // Извлекаем данные бронирования и тип действия
+    const webhookInfo = extractWebhookInfo(webhookData);
+    if (!webhookInfo) {
       console.log('Некорректные/неподдерживаемые данные webhook — запрос принят. Возвращаем 200.');
       return res.json({ message: 'Webhook принят, но данные не соответствуют ожидаемому формату' });
     }
+
+    const { action, bookingData } = webhookInfo;
 
     // Находим таблицы, которые должны получить эти данные
     const targetSheets = await findTargetSheets(bookingData.apartmentTitle);
@@ -103,13 +105,26 @@ export const processWebhook = async (req: Request, res: Response) => {
       return res.json({ message: 'Данные обработаны, но подходящих таблиц не найдено' });
     }
 
-    // Добавляем данные в каждую подходящую таблицу
-    for (const sheet of targetSheets) {
-      await addBookingToSheet(sheet, bookingData);
+    // Обрабатываем действие в зависимости от типа
+    if (action === 'delete_booking') {
+      // Удаляем бронирование из каждой подходящей таблицы
+      for (const sheet of targetSheets) {
+        await deleteBookingFromSheet(sheet, bookingData);
+      }
+      console.log(`Бронирование удалено из ${targetSheets.length} таблиц`);
+    } else {
+      // Добавляем или обновляем данные бронирования в каждую подходящую таблицу
+      for (const sheet of targetSheets) {
+        await addBookingToSheet(sheet, bookingData);
+      }
+      console.log(`Данные бронирования добавлены в ${targetSheets.length} таблиц`);
     }
 
-    console.log(`Данные бронирования добавлены в ${targetSheets.length} таблиц`);
-    res.json({ message: 'Данные успешно обработаны', processedSheets: targetSheets.length });
+    res.json({ 
+      message: 'Данные успешно обработаны', 
+      action: action,
+      processedSheets: targetSheets.length 
+    });
 
   } catch (error) {
     console.error('Ошибка при обработке webhook:', error);
@@ -117,8 +132,8 @@ export const processWebhook = async (req: Request, res: Response) => {
   }
 };
 
-// Извлечение данных бронирования из webhook
-function extractBookingData(webhookData: any) {
+// Извлечение информации о webhook (действие и данные бронирования)
+function extractWebhookInfo(webhookData: any) {
   try {
     console.log('🔍 Анализ структуры webhookData:', {
       isArray: Array.isArray(webhookData),
@@ -127,62 +142,66 @@ function extractBookingData(webhookData: any) {
       firstElement: Array.isArray(webhookData) && webhookData.length > 0 ? 'есть первый элемент' : 'нет первого элемента'
     });
 
-    let bookingSource;
+    let webhookSource;
+    let action = 'create_or_update'; // По умолчанию
     
     // Проверяем, приходят ли данные в виде массива (как в логах)
     if (Array.isArray(webhookData) && webhookData.length > 0) {
       // Данные в формате массива - берем первый элемент и его body
       const firstElement = webhookData[0];
       if (firstElement?.body?.data?.booking) {
-        bookingSource = firstElement.body.data.booking;
+        webhookSource = firstElement.body.data.booking;
+        action = firstElement.body.action || 'create_or_update';
         console.log('✅ Найдены данные бронирования в массиве: webhookData[0].body.data.booking');
       }
     } else if (webhookData?.data?.booking) {
       // Данные в прямом формате объекта
-      bookingSource = webhookData.data.booking;
+      webhookSource = webhookData.data.booking;
+      action = webhookData.action || 'create_or_update';
       console.log('✅ Найдены данные бронирования в объекте: webhookData.data.booking');
     }
 
-    if (!bookingSource) {
+    if (!webhookSource) {
       console.log('❌ Данные бронирования не найдены в webhook');
       return null;
     }
 
     console.log('📋 Извлеченные поля бронирования:', {
-      apartment_title: bookingSource.apartment?.title,
-      begin_date: bookingSource.begin_date,
-      end_date: bookingSource.end_date,
-      client_fio: bookingSource.client?.fio,
-      client_phone: bookingSource.client?.phone,
-      amount: bookingSource.amount,
-      source: bookingSource.source
+      action: action,
+      apartment_title: webhookSource.apartment?.title,
+      begin_date: webhookSource.begin_date,
+      end_date: webhookSource.end_date,
+      client_fio: webhookSource.client?.fio,
+      client_phone: webhookSource.client?.phone,
+      amount: webhookSource.amount,
+      source: webhookSource.source
     });
     
     // Вычисляем количество дней
-    const beginDate = new Date(bookingSource.begin_date);
-    const endDate = new Date(bookingSource.end_date);
+    const beginDate = new Date(webhookSource.begin_date);
+    const endDate = new Date(webhookSource.end_date);
     const daysDiff = Math.ceil((endDate.getTime() - beginDate.getTime()) / (1000 * 60 * 60 * 24));
 
     const extractedData = {
-      id: bookingSource.id, // ID бронирования для связи
-      apartmentTitle: bookingSource.apartment?.title || '',
-      beginDate: bookingSource.begin_date,
-      endDate: bookingSource.end_date,
+      id: webhookSource.id, // ID бронирования для связи
+      apartmentTitle: webhookSource.apartment?.title || '',
+      beginDate: webhookSource.begin_date,
+      endDate: webhookSource.end_date,
       daysCount: daysDiff,
-      guestName: bookingSource.client?.fio || '',
-      phone: bookingSource.client?.phone || '',
-      totalAmount: bookingSource.amount || 0,
-      prepayment: bookingSource.prepayment || 0,
-      pricePerDay: bookingSource.price_per_day || 0,
-      statusCode: bookingSource.status_cd || 0,
-      source: bookingSource.source || '',
-      notes: bookingSource.notes || ''
+      guestName: webhookSource.client?.fio || '',
+      phone: webhookSource.client?.phone || '',
+      totalAmount: webhookSource.amount || 0,
+      prepayment: webhookSource.prepayment || 0,
+      pricePerDay: webhookSource.price_per_day || 0,
+      statusCode: webhookSource.status_cd || 0,
+      source: webhookSource.source || '',
+      notes: webhookSource.notes || ''
     };
 
-    console.log('✅ Успешно извлечены данные для обработки:', extractedData);
-    return extractedData;
+    console.log('✅ Успешно извлечены данные для обработки:', { action, ...extractedData });
+    return { action, bookingData: extractedData };
   } catch (error) {
-    console.error('❌ Ошибка при извлечении данных бронирования:', error);
+    console.error('❌ Ошибка при извлечении данных webhook:', error);
     return null;
   }
 }
@@ -349,5 +368,79 @@ async function addBookingToSheet(sheet: any, bookingData: any) {
     console.log(`✅ ${isUpdate ? 'Обновлено' : 'Добавлено'} бронирование ID ${bookingId} в таблице ${sheet.title} (ID: ${sheet.id}), строка ${targetRow}`);
   } catch (error) {
     console.error(`❌ Ошибка при добавлении данных в таблицу ${sheet.id}:`, error);
+  }
+} 
+
+// Удаление бронирования из таблицы и сдвиг строк вверх
+async function deleteBookingFromSheet(sheet: any, bookingData: any) {
+  try {
+    const bookingId = bookingData.id;
+    
+    // Ищем ячейки с данным booking_id
+    const bookingCells = await Cell.findAll({
+      where: { 
+        sheetId: sheet.id,
+        bookingId: bookingId
+      },
+      order: [['row', 'ASC'], ['column', 'ASC']]
+    });
+
+    if (bookingCells.length === 0) {
+      console.log(`❌ Бронирование ID ${bookingId} не найдено в таблице ${sheet.title}`);
+      return;
+    }
+
+    const targetRow = bookingCells[0].row;
+    console.log(`🗑️ Удаление бронирования ID ${bookingId} из таблицы ${sheet.title}, строка ${targetRow}`);
+
+    // Удаляем все ячейки с данным booking_id
+    await Cell.destroy({
+      where: { 
+        sheetId: sheet.id,
+        bookingId: bookingId
+      }
+    });
+
+    console.log(`✅ Удалено ${bookingCells.length} ячеек бронирования ID ${bookingId}`);
+
+    // Сдвигаем все строки ниже удаленной вверх на одну позицию
+    const cellsToShift = await Cell.findAll({
+      where: { 
+        sheetId: sheet.id,
+        row: { [Op.gt]: targetRow } // Все строки больше удаленной
+      },
+      order: [['row', 'ASC'], ['column', 'ASC']]
+    });
+
+    if (cellsToShift.length > 0) {
+      console.log(`⬆️ Сдвигаем ${cellsToShift.length} ячеек вверх на одну позицию`);
+
+      // Группируем ячейки по строкам для правильного сдвига
+      const rowsToShift = [...new Set(cellsToShift.map(cell => cell.row))].sort((a, b) => a - b);
+      
+      // Сдвигаем строки снизу вверх, чтобы избежать конфликтов
+      for (let i = rowsToShift.length - 1; i >= 0; i--) {
+        const currentRow = rowsToShift[i];
+        const newRow = currentRow - 1;
+        
+        await Cell.update(
+          { row: newRow },
+          {
+            where: {
+              sheetId: sheet.id,
+              row: currentRow
+            }
+          }
+        );
+      }
+
+      console.log(`✅ Сдвинуто ${cellsToShift.length} ячеек в ${rowsToShift.length} строках`);
+    } else {
+      console.log(`ℹ️ Нет ячеек для сдвига после строки ${targetRow}`);
+    }
+
+    console.log(`✅ Бронирование ID ${bookingId} успешно удалено из таблицы ${sheet.title} (ID: ${sheet.id})`);
+  } catch (error) {
+    console.error(`❌ Ошибка при удалении бронирования из таблицы ${sheet.id}:`, error);
   }
 } 
