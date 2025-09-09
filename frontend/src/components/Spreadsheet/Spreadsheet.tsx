@@ -1779,18 +1779,23 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
   // Выполняем автосортировку один раз после загрузки ячеек для отчета DMD Cottage
   const hasAutoSortedRef = useRef(false);
   
+  // После первой автосортировки запускаем авторазмеры один раз
+  const needsResizeAfterSortRef = useRef(false);
   useEffect(() => {
     if (!isDMDCottageReport) return;
     if (cells.size === 0) return;
     if (hasAutoSortedRef.current) return;
     
-    // Небольшая задержка чтобы дать время на полную загрузку данных
     const timer = setTimeout(() => {
       sortByColumnAForDMDCottage();
       hasAutoSortedRef.current = true;
+      needsResizeAfterSortRef.current = true;
     }, 2);
     return () => clearTimeout(timer);
   }, [isDMDCottageReport, cells, sortByColumnAForDMDCottage]);
+
+  // Эффект ниже handleAutoResize: триггерит авторазмер один раз после сортировки
+
 
   // Сбрасываем флаг при смене таблицы
   useEffect(() => {
@@ -2055,7 +2060,11 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       // Собираем ячейки для применения переноса текста (повторное вычисление, т.к. выше переменная вне скоупа)
       const cellsToUpdate: Array<{ row: number; column: number; format: any }> = [];
       cells.forEach((cell) => {
-        if (cell.value && cell.value.length > 9) {
+        // Для фиксированных столбцов DMD Cottage применяем перенос ко всем ячейкам
+        const isFixedColumn = isDMDCottageReport && DMD_COTTAGE_FIXED_COLUMN_WIDTHS[cell.column];
+        const needsWrap = isFixedColumn || (cell.value && cell.value.length > 9);
+        
+        if (needsWrap) {
           const format = {
             ...cell.format,
             whiteSpace: 'normal',
@@ -2090,14 +2099,6 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
           console.log('🔄 Перезагружены размеры из таблицы:', { reloadedColumnSizes, reloadedRowSizes });
           setColumnSizes(reloadedColumnSizes);
           setRowSizes(reloadedRowSizes);
-          
-          // Выполняем автосортировку для DMD Cottage после перезагрузки данных
-          if (isDMDCottageReport) {
-            setTimeout(() => {
-              sortByColumnAForDMDCottage();
-              console.log('🔄 Автосортировка DMD Cottage выполнена после перезагрузки размеров');
-            }, 100);
-          }
         }
       } catch (reloadError) {
         console.error('❌ Ошибка перезагрузки настроек таблицы:', reloadError);
@@ -2127,6 +2128,21 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
   //   //   });
   //   // }
   // }, [sheet?.template?.name, sheet]);
+
+  // Триггер авторазмера после сортировки (объявлен ниже handleAutoResize для корректного порядка зависимостей)
+  useEffect(() => {
+    if (!isDMDCottageReport) return;
+    if (!hasAutoSortedRef.current) return;
+    if (!needsResizeAfterSortRef.current) return;
+    needsResizeAfterSortRef.current = false;
+    (async () => {
+      try {
+        await handleAutoResize();
+      } catch (e) {
+        console.error('❌ Ошибка автонастройки после сортировки:', e);
+      }
+    })();
+  }, [isDMDCottageReport, handleAutoResize]);
 
   // Функция для экспорта в Excel с сохранением ширин/высот/границ/форматирования
   const handleExportExcel = async () => {
