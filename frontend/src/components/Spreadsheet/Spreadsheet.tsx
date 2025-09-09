@@ -2137,13 +2137,24 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     if (!hasAutoSortedRef.current) return;
     if (!needsResizeAfterSortRef.current) return;
     needsResizeAfterSortRef.current = false;
-    (async () => {
-      try {
-        await handleAutoResize();
-      } catch (e) {
-        console.error('❌ Ошибка автонастройки после сортировки:', e);
+    // Пытаемся кликнуть по кнопке по предоставленному XPath; если не найдена — вызываем напрямую
+    try {
+      const toolbarButton = document.evaluate(
+        '//*[@id="root"]/div/div/div/div[1]/button[7]',
+        document,
+        null,
+        XPathResult.FIRST_ORDERED_NODE_TYPE,
+        null
+      ).singleNodeValue as HTMLElement | null;
+      if (toolbarButton) {
+        toolbarButton.click();
+      } else {
+        void handleAutoResize();
       }
-    })();
+    } catch (e) {
+      console.warn('⚠️ Не удалось кликнуть по XPath, вызываю авторазмер напрямую:', e);
+      void handleAutoResize();
+    }
   }, [isDMDCottageReport, handleAutoResize]);
 
   // Функция для экспорта в Excel с сохранением ширин/высот/границ/форматирования
