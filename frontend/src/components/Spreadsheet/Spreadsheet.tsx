@@ -2069,7 +2069,9 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
             ...cell.format,
             whiteSpace: 'normal',
             wordWrap: 'break-word',
-            overflow: 'visible'
+            wordBreak: 'break-word',
+            overflowWrap: 'anywhere',
+            overflow: 'hidden'
           };
           cellsToUpdate.push({ row: cell.row, column: cell.column, format });
         }

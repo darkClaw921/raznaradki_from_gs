@@ -133,20 +133,22 @@ const Cell: React.FC<CellProps> = ({
       styles.fontWeight = 'bold';
     }
 
-    // Поддержка переноса текста
+    // Поддержка переноса текста — строго не выходим за границы ячейки
     if (format.whiteSpace) {
       styles.whiteSpace = format.whiteSpace;
-      styles.overflow = format.overflow || 'visible';
+      styles.overflow = format.overflow || 'hidden';
       styles.wordWrap = format.wordWrap || 'break-word';
-      styles.textOverflow = 'unset';
-      delete styles.textOverflow;
+      styles.wordBreak = format.wordBreak || 'break-word';
+      styles.overflowWrap = format.overflowWrap || 'anywhere';
+      styles.textOverflow = 'clip';
     } else if (isDMDCottageReport) {
-      // Для отчета DMD Cottage включаем перенос по умолчанию, чтобы он сохранялся при смене даты и повторной автонастройке
+      // Для отчета DMD Cottage включаем перенос по умолчанию, сохраняя текст внутри ячейки
       styles.whiteSpace = 'normal';
-      styles.overflow = 'visible';
+      styles.overflow = 'hidden';
       styles.wordWrap = 'break-word';
-      styles.textOverflow = 'unset';
-      delete styles.textOverflow;
+      styles.wordBreak = 'break-word';
+      styles.overflowWrap = 'anywhere';
+      styles.textOverflow = 'clip';
     }
 
     if (format.border) {

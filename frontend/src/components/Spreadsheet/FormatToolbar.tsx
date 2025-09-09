@@ -120,7 +120,9 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({
       textWrap: 'wrap', // Добавляем флаг для автоподстройки высоты
       whiteSpace: 'normal',
       wordWrap: 'break-word',
-      overflow: 'visible'
+      wordBreak: 'break-word',
+      overflowWrap: 'anywhere',
+      overflow: 'hidden'
     };
     onFormat(format);
   };
