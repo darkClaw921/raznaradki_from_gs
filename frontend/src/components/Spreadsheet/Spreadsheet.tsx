@@ -55,6 +55,16 @@ const ROW_HEIGHT_DEFAULT = 30;
 const HEADER_HEIGHT = 30;
 const BUFFER_SIZE = 5; // Количество строк выше и ниже видимой области
 
+// Фиксированные ширины столбцов для шаблона "Отчет заселения/выселения DMD Cottage"
+const DMD_COTTAGE_FIXED_COLUMN_WIDTHS: { [key: number]: number } = {
+  1: 94,   // Статус дома
+  4: 120, // Комментарий
+  9: 104,  // Дата выселения
+  10: 74,  // Кол-во дней
+  11: 66,  // Общая сумма
+  13: 79   // Доплата
+};
+
 const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, reportDate }) => {
   const [cells, setCells] = useState<Map<string, CellData>>(new Map());
   const [selectedCell, setSelectedCell] = useState<{ row: number; column: number } | null>(null);
@@ -182,6 +192,12 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     return offset;
   }, [rowSizes]);
 
+  // Детекция конкретного шаблона отчета DMD Cottage
+  const isDMDCottageReport = useMemo(() => {
+    return sheet?.template?.name === 'Отчет заселения/выселения DMD Cottage' ||
+           sheet?.template?.name?.includes('Отчет заселения/выселения DMD Cottage');
+  }, [sheet?.template?.name]);
+
   // Загрузка ячеек при инициализации
   useEffect(() => {
     if (sheet?.cells) {
@@ -191,6 +207,11 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
         cellsMap.set(key, cell);
       });
       setCells(cellsMap);
+      
+      // Сбрасываем флаг автосортировки при перезагрузке данных
+      if (isDMDCottageReport) {
+        hasAutoSortedRef.current = false;
+      }
     }
 
     // Загружаем размеры из настроек таблицы
@@ -205,7 +226,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       setColumnSizes({});
       setRowSizes({});
     }
-  }, [sheet]);
+  }, [sheet, isDMDCottageReport]);
 
   // Обновление размеров контейнера
   useEffect(() => {
@@ -1630,6 +1651,152 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     );
   };
 
+  // Определяем, нужно ли скрыть нумерацию строк для отчета DMD Cottage
+  const hideRowNumbers = useMemo(() => {
+    return isDMDCottageReport;
+  }, [isDMDCottageReport]);
+
+  // Предварительно вычисляем строки, которые являются концом группы вида ["29а", "29а дуль"] по колонке A (0)
+  const groupEndRows = useMemo(() => {
+    if (!hideRowNumbers) return new Set<number>();
+    const result = new Set<number>();
+    const maxRows = sheet.rowCount || 100;
+    for (let r = 0; r < maxRows - 1; r++) {
+      const v1 = (getCellValue(r, 0) || '').toString().trim().toLowerCase();
+      const v2 = (getCellValue(r + 1, 0) || '').toString().trim().toLowerCase();
+      if (!v1 || !v2) continue;
+      if (v2 === `${v1} дубль`) {
+        result.add(r + 1); // вторая строка пары — конец группы
+      }
+    }
+    return result;
+  }, [hideRowNumbers, sheet.rowCount, cells]);
+
+  // Авто-сортировка по столбцу A для отчета DMD Cottage (с сохранением пар X / X дубль)
+  const sortByColumnAForDMDCottage = useCallback(() => {
+    if (!isDMDCottageReport) return;
+    const totalRows = sheet.rowCount || 100;
+    const totalCols = sheet.columnCount || 26;
+
+    // Данные начинаются с 3-й строки (индекс 2): 0 — заголовок, 1 — вторая строка шапки
+    const dataStartRow = 2;
+
+    // Нормализатор базы: число + литера (латиница/кириллица), пустая литера — приоритетная
+    const parseBase = (raw: string): { num: number | null; suffix: string; norm: string } => {
+      const s = (raw || '').toString().trim().toUpperCase();
+      const m = s.match(/^(\d+)\s*([A-ZА-ЯЁ]*)$/i);
+      if (m) {
+        const num = parseInt(m[1], 10);
+        const suffix = (m[2] || '').toUpperCase();
+        return { num: Number.isFinite(num) ? num : null, suffix, norm: `${num}${suffix}` };
+      }
+      return { num: null, suffix: s, norm: s };
+    };
+
+    // Собираем строки с их ячейками
+    type RowCells = { originalRow: number; cells: Map<number, CellData>; aRaw: string; aBase: string; isDub: boolean; parsed: { num: number | null; suffix: string; norm: string } };
+    const rows: RowCells[] = [];
+    for (let row = dataStartRow; row < totalRows; row++) {
+      let hasData = false;
+      const rowCells = new Map<number, CellData>();
+      for (let col = 0; col < totalCols; col++) {
+        const key = getCellKey(row, col);
+        const cell = cells.get(key);
+        if (cell) {
+          rowCells.set(col, cell);
+          if (cell.value && cell.value.toString().trim() !== '') hasData = true;
+        }
+      }
+      if (!hasData) continue;
+      const aVal = (getCellValue(row, 0) || '').toString();
+      const lower = aVal.toLowerCase().trim();
+      // Распознаём "дубль" с доп. пробелами/регистр/скрытые символы
+      const isDub = /\s*дубль\s*$/i.test(lower);
+      const baseText = isDub ? lower.replace(/\s*дубль\s*$/i, '').trim() : lower;
+      const parsed = parseBase(baseText);
+      rows.push({ originalRow: row, cells: rowCells, aRaw: aVal, aBase: baseText, isDub, parsed });
+    }
+
+    if (rows.length === 0) return;
+
+    // Группируем пары: основной + дубль
+    const groups = new Map<string, { base: string; parsed: { num: number | null; suffix: string; norm: string }; main?: RowCells; dub?: RowCells }>();
+    for (const r of rows) {
+      const key = r.parsed.norm || r.aBase;
+      const existing = groups.get(key) || { base: r.aBase, parsed: r.parsed };
+      if (r.isDub) existing.dub = r; else existing.main = r;
+      // Если parsed у текущей записи более информативен (есть num), обновим
+      if (existing.parsed.num === null && r.parsed.num !== null) existing.parsed = r.parsed;
+      groups.set(key, existing);
+    }
+
+    // Сортируем группы: по числу, затем по литере (пустая — раньше), затем по алфавиту как fallback
+    const sortedGroups = Array.from(groups.values()).sort((a, b) => {
+      const pa = a.parsed; const pb = b.parsed;
+      if (pa.num !== null && pb.num !== null && pa.num !== pb.num) return pa.num - pb.num;
+      if (pa.num !== null && pb.num === null) return -1;
+      if (pa.num === null && pb.num !== null) return 1;
+      // num равны или отсутствуют — сравниваем суффиксы (пустой раньше)
+      const sa = pa.suffix || '';
+      const sb = pb.suffix || '';
+      if (sa === '' && sb !== '') return -1;
+      if (sa !== '' && sb === '') return 1;
+      const sufCmp = sa.localeCompare(sb, 'ru', { numeric: true, sensitivity: 'base' });
+      if (sufCmp !== 0) return sufCmp;
+      // Fallback: по нормализованной строке
+      return (pa.norm || a.base).localeCompare(pb.norm || b.base, 'ru', { numeric: true, sensitivity: 'base' });
+    });
+
+    // Пересобираем карту ячеек
+    const newCells = new Map(cells);
+    // Очищаем старые позиции данных
+    for (let row = dataStartRow; row < totalRows; row++) {
+      for (let col = 0; col < totalCols; col++) {
+        const key = getCellKey(row, col);
+        newCells.delete(key);
+      }
+    }
+
+    // Записываем в новом порядке: сначала main, затем dub (если есть)
+    let writeRow = dataStartRow;
+    for (const g of sortedGroups) {
+      const order: RowCells[] = [];
+      if (g.main) order.push(g.main);
+      if (g.dub) order.push(g.dub);
+      for (const item of order) {
+        item.cells.forEach((cell, col) => {
+          const newKey = getCellKey(writeRow, col);
+          newCells.set(newKey, { ...cell, row: writeRow });
+        });
+        writeRow++;
+      }
+    }
+
+    setCells(newCells);
+    console.log('🔄 Автосортировка DMD Cottage по столбцу A выполнена (число+литера, группы с дублем)');
+  }, [cells, sheet, isDMDCottageReport, getCellValue]);
+
+  // Выполняем автосортировку один раз после загрузки ячеек для отчета DMD Cottage
+  const hasAutoSortedRef = useRef(false);
+  
+  useEffect(() => {
+    if (!isDMDCottageReport) return;
+    if (cells.size === 0) return;
+    if (hasAutoSortedRef.current) return;
+    
+    // Небольшая задержка чтобы дать время на полную загрузку данных
+    const timer = setTimeout(() => {
+      sortByColumnAForDMDCottage();
+      hasAutoSortedRef.current = true;
+    }, 2);
+    return () => clearTimeout(timer);
+  }, [isDMDCottageReport, cells, sortByColumnAForDMDCottage]);
+
+  // Сбрасываем флаг при смене таблицы
+  useEffect(() => {
+    hasAutoSortedRef.current = false;
+  }, [sheet?.id]);
+
   const renderGrid = () => {
     const { startRow, endRow } = getVisibleRows();
     const rows = [];
@@ -1677,6 +1844,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
                   : cellFormat;
                 const columnWidth = getColumnWidth(col);
                 
+                const isGroupEnd = groupEndRows.has(row);
                 cells.push(
                   <Cell
                     key={`${row}-${col}`}
@@ -1691,6 +1859,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
                     editValue={editValue}
                     width={columnWidth}
                     height={rowHeight}
+                    isGroupEndRow={isGroupEnd}
                     onEditValueChange={setEditValue}
                     onClick={() => handleCellClick(row, col)}
                     onMouseDown={() => handleCellMouseDown(row, col)}
@@ -1707,7 +1876,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       
               visibleRows.push(
                 <Box key={row} sx={{ display: 'flex' }}>
-                  {renderRowHeader(row)}
+                  {!hideRowNumbers && renderRowHeader(row)}
                   {cells}
                 </Box>
               );
@@ -1744,6 +1913,11 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
 
   // Функция для расчета оптимальной ширины столбца на основе содержимого
   const calculateOptimalColumnWidth = useCallback((column: number): number => {
+    // Для шаблона DMD Cottage используем фиксированные ширины для определенных столбцов
+    if (isDMDCottageReport && DMD_COTTAGE_FIXED_COLUMN_WIDTHS[column]) {
+      return DMD_COTTAGE_FIXED_COLUMN_WIDTHS[column];
+    }
+
     const MIN_WIDTH = 100;
     const MAX_WIDTH = 400;
     const PADDING = 24; // горизонтальные отступы ячейки
@@ -1773,7 +1947,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       }
     }
     return Math.min(maxWidth, MAX_WIDTH);
-  }, [cells, sheet.rowCount]);
+  }, [cells, sheet.rowCount, isDMDCottageReport]);
 
   // Функция для расчета оптимальной высоты строки с учетом переноса текста
   const calculateOptimalRowHeight = useCallback((row: number): number => {
@@ -1823,6 +1997,15 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
         
         const optimalWidth = calculateOptimalColumnWidth(col);
         if (optimalWidth !== getColumnWidth(col)) newColumnSizes[col] = optimalWidth;
+      }
+
+      // Для шаблона DMD Cottage принудительно устанавливаем фиксированные ширины
+      if (isDMDCottageReport) {
+        Object.entries(DMD_COTTAGE_FIXED_COLUMN_WIDTHS).forEach(([col, width]) => {
+          const columnIndex = parseInt(col);
+          newColumnSizes[columnIndex] = width;
+          console.log(`🔧 Устанавливаем фиксированную ширину для столбца ${columnIndex}: ${width}px`);
+        });
       }
 
       // Пересчет высот строк с учетом НОВЫХ ширин столбцов
@@ -1907,6 +2090,14 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
           console.log('🔄 Перезагружены размеры из таблицы:', { reloadedColumnSizes, reloadedRowSizes });
           setColumnSizes(reloadedColumnSizes);
           setRowSizes(reloadedRowSizes);
+          
+          // Выполняем автосортировку для DMD Cottage после перезагрузки данных
+          if (isDMDCottageReport) {
+            setTimeout(() => {
+              sortByColumnAForDMDCottage();
+              console.log('🔄 Автосортировка DMD Cottage выполнена после перезагрузки размеров');
+            }, 100);
+          }
         }
       } catch (reloadError) {
         console.error('❌ Ошибка перезагрузки настроек таблицы:', reloadError);
@@ -2242,6 +2433,33 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       }
     }
 
+    // Жирная нижняя граница для концов групп ("X" и следующая строка "X дубль") по колонке A
+    if (isDMDCottageReport) {
+      // Собираем видимые колонки
+      const visibleCols: number[] = [];
+      for (let col = 0; col < totalCols; col++) {
+        if (sheet?.templateId === 2 && (col === 5 || col === 8 || col === 15)) continue;
+        visibleCols.push(col);
+      }
+      const medium = { style: 'medium', color: { argb: 'FF000000' } } as any;
+      for (let r = 0; r < totalRows - 1; r++) {
+        const v1 = (getCellValue(r, 0) || '').toString().trim().toLowerCase();
+        const v2 = (getCellValue(r + 1, 0) || '').toString().trim().toLowerCase();
+        if (!v1 || !v2) continue;
+        if (v2 === `${v1} дубль`) {
+          // Применяем нижнюю границу для второй строки пары (r+1) по всем видимым колонкам
+          let excelC = 1;
+          for (let col = 0; col < totalCols; col++) {
+            if (sheet?.templateId === 2 && (col === 5 || col === 8 || col === 15)) continue;
+            const cell = worksheet.getCell((r + 1) + 1, excelC); // r+1 (вторая строка) + 1 для 1-based
+            const existing = cell.border || {};
+            cell.border = { ...existing, bottom: medium } as any;
+            excelC++;
+          }
+        }
+      }
+    }
+
     // Запись файла
     const safeName = (sheet.name || 'Report').replace(/[\\/?*\[\]:]/g, '').trim().slice(0, 31) || 'Report';
     const dateForName = getReportDateString();
@@ -2369,13 +2587,13 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
         <Box ref={gridContainerRef} sx={{ display: 'inline-block', minWidth: '100%' }}>
           {/* Headers */}
           <Box sx={{ display: 'flex', position: 'sticky', top: 0, zIndex: 1 }}>
-            <Box sx={{ width: 50, height: 30 }} /> {/* Corner cell */}
+            {!hideRowNumbers && <Box sx={{ width: 50, height: 30 }} />}{/* Corner cell */}
             {renderColumnHeaders()}
           </Box>
           {/* Кастомная шапка для отчетов */}
           {sheet?.template?.name?.includes('Отчет') && (
             <Box sx={{ display: 'flex', position: 'sticky', top: 30, zIndex: 1 }}>
-              <Box sx={{ width: 50, height: 30 }} />
+              {!hideRowNumbers && <Box sx={{ width: 50, height: 30 }} />}
               {/* A1:B1 - только дата */}
               <Box
                 sx={{

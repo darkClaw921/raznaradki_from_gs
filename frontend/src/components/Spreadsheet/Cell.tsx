@@ -14,6 +14,7 @@ interface CellProps {
   editValue: string;
   width?: number;
   height?: number;
+  isGroupEndRow?: boolean;
   onEditValueChange: (value: string) => void;
   onClick: () => void;
   onMouseDown?: () => void;
@@ -45,6 +46,7 @@ const Cell: React.FC<CellProps> = ({
   editValue,
   width = 100,
   height = 30,
+  isGroupEndRow = false,
   onEditValueChange,
   onClick,
   onMouseDown,
@@ -184,6 +186,11 @@ const Cell: React.FC<CellProps> = ({
     // Добавляем жирную левую границу для столбцов C и G в отчетах DMD Cottage
     if (needsThickBorder) {
       styles.borderLeft = '2px solid #000000';
+    }
+
+    // Добавляем жирную нижнюю границу для конца группы ("X" и следующая строка "X дуль")
+    if (isDMDCottageReport && isGroupEndRow) {
+      styles.borderBottom = '2px solid #000000';
     }
 
     if (!format.backgroundColor) {

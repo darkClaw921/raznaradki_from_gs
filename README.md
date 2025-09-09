@@ -119,7 +119,8 @@ docker-compose up -d --build backend
 ```bash
 docker-compose up -d --build frontend
 ```
-
+# phpMyAdmin для мониторинга базы данных
+запустите соответствующий контейнер 
 ## API
 
 ### Аутентификация

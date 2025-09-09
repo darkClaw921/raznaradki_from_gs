@@ -5,10 +5,10 @@ services:
     container_name: dmd_mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-dmd_cottage_sheets}
-      MYSQL_USER: ${MYSQL_USER:-dmduser}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-dmdpassword}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
@@ -35,15 +35,15 @@ services:
       PORT: 3001
       DB_HOST: mysql
       DB_PORT: 3306
-      DB_NAME: ${MYSQL_DATABASE:-dmd_cottage_sheets}
-      DB_USER: ${MYSQL_USER:-dmduser}
-      DB_PASSWORD: ${MYSQL_PASSWORD:-dmdpassword}
-      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      DB_NAME: ${MYSQL_DATABASE}
+      DB_USER: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
-      FRONTEND_URL: ${FRONTEND_URL:-https://dmd-cottage.alteran-industries.ru}
+      FRONTEND_URL: ${FRONTEND_URL}
       # Переменные администратора
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@dmdcottage.com}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123456}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       ADMIN_FIRST_NAME: ${ADMIN_FIRST_NAME:-Администратор}
       ADMIN_LAST_NAME: ${ADMIN_LAST_NAME:-Системы}
     ports:
@@ -63,8 +63,8 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      REACT_APP_API_URL: ${REACT_APP_API_URL:-https://dmd-cottage.alteran-industries.ru/api}
-      REACT_APP_WS_URL: ${REACT_APP_WS_URL:-wss://dmd-cottage.alteran-industries.ru}
+      REACT_APP_API_URL: ${REACT_APP_API_URL}
+      REACT_APP_WS_URL: ${REACT_APP_WS_URL}
     ports:
       - "3000:3000"
     networks:
@@ -97,8 +97,8 @@ services:
     environment:
       PMA_HOST: mysql
       PMA_PORT: 3306
-      PMA_USER: ${MYSQL_USER:-dmduser}
-      PMA_PASSWORD: ${MYSQL_PASSWORD:-dmdpassword}
+      PMA_USER: ${MYSQL_USER}
+      PMA_PASSWORD: ${MYSQL_PASSWORD}
     depends_on:
       mysql:
         condition: service_healthy
