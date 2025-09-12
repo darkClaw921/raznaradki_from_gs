@@ -6,6 +6,7 @@ import FormatToolbar from './FormatToolbar';
 import CellHistoryDialog from './CellHistoryDialog';
 import { FormulaEngine } from '../../utils/formulaEngine';
 import { debounce } from 'lodash';
+import { chunkCells, delay, BatchDebouncer, CellUpdate, BATCH_SIZE, BATCH_DELAY } from '../../utils/batchRequests';
 import {
   Table,
   TableBody,
@@ -201,6 +202,12 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
   // Загрузка ячеек при инициализации
   useEffect(() => {
     if (sheet?.cells) {
+      // Не перезагружаем ячейки если уже была выполнена автосортировка
+      if (isDMDCottageReport && hasAutoSortedRef.current) {
+        console.log('🚫 Пропускаем перезагрузку ячеек - автосортировка уже выполнена');
+        return;
+      }
+      
       const cellsMap = new Map<string, CellData>();
       sheet.cells.forEach((cell: any) => {
         const key = `${cell.row}-${cell.column}`;
@@ -208,8 +215,8 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       });
       setCells(cellsMap);
       
-      // Сбрасываем флаг автосортировки при перезагрузке данных
-      if (isDMDCottageReport) {
+      // Сбрасываем флаг автосортировки при перезагрузке данных только если это не автосортировка
+      if (isDMDCottageReport && !hasAutoSortedRef.current) {
         hasAutoSortedRef.current = false;
       }
     }
@@ -580,22 +587,60 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     }
   }, [sheet.id, userPermissions]);
 
-  // Функция массового сохранения ячеек (для операций вставки)
+  // Функция пакетного сохранения ячеек (оптимизированная для больших объемов)
+  const saveCellsBatchOptimized = useCallback(async (cellsToSave: CellUpdate[]) => {
+    if (userPermissions === 'read' || cellsToSave.length === 0) return;
+    
+    try {
+      console.log(`🚀 Начинаем пакетное сохранение ${cellsToSave.length} ячеек`);
+      
+      // Разбиваем на пакеты по BATCH_SIZE
+      const batches = chunkCells(cellsToSave, BATCH_SIZE);
+      console.log(`📦 Разбито на ${batches.length} пакетов по ${BATCH_SIZE} ячеек`);
+      
+      let totalProcessed = 0;
+      
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        console.log(`📦 Обрабатываем пакет ${i + 1}/${batches.length} (${batch.length} ячеек)`);
+        
+        try {
+          await cellsApi.updateCellsBatchOptimized(sheet.id, batch);
+          totalProcessed += batch.length;
+          
+          // Задержка между пакетами (кроме последнего)
+          if (i < batches.length - 1) {
+            await delay(BATCH_DELAY);
+          }
+        } catch (batchError) {
+          console.error(`❌ Ошибка в пакете ${i + 1}:`, batchError);
+          // Продолжаем обработку следующих пакетов
+        }
+      }
+      
+      console.log(`✅ Пакетное сохранение завершено: ${totalProcessed}/${cellsToSave.length} ячеек`);
+    } catch (error) {
+      console.error('Ошибка пакетного сохранения ячеек:', error);
+    }
+  }, [sheet.id, userPermissions]);
+
+  // Функция массового сохранения ячеек (для операций вставки) - оставляем для совместимости
   const saveCellsBatch = useCallback(async (cellsToSave: Array<{
     row: number;
     column: number;
     value?: string;
     formula?: string;
   }>) => {
-    if (userPermissions === 'read' || cellsToSave.length === 0) return;
+    // Конвертируем в формат CellUpdate и используем оптимизированную функцию
+    const cellUpdates: CellUpdate[] = cellsToSave.map(cell => ({
+      row: cell.row,
+      column: cell.column,
+      value: cell.value,
+      formula: cell.formula
+    }));
     
-    try {
-      await cellsApi.updateCellsBatch(sheet.id, cellsToSave);
-      console.log(`Массово сохранено ${cellsToSave.length} ячеек`);
-    } catch (error) {
-      console.error('Ошибка массового сохранения ячеек:', error);
-    }
-  }, [sheet.id, userPermissions]);
+    await saveCellsBatchOptimized(cellUpdates);
+  }, [saveCellsBatchOptimized]);
 
   const getCellKey = (row: number, column: number) => `${row}-${column}`;
 
@@ -1543,15 +1588,20 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
                     console.warn(`⚠️ Settings не получены в ответе:`, response);
                     
                     // Если settings не получены, попробуем перезагрузить sheet
-                    try {
-                      console.log(`🔄 Перезагружаем sheet для получения актуальных settings`);
-                      const sheetResponse = await sheetsApi.getSheet(sheet.id.toString());
-                      if (sheetResponse.data?.sheet?.settings?.columnSizes) {
-                        console.log(`📊 Загружены settings из getSheet:`, sheetResponse.data.sheet.settings.columnSizes);
-                        setColumnSizes(sheetResponse.data.sheet.settings.columnSizes);
+                    // НЕ перезагружаем если была выполнена автосортировка DMD Cottage
+                    if (!(isDMDCottageReport && hasAutoSortedRef.current)) {
+                      try {
+                        console.log(`🔄 Перезагружаем sheet для получения актуальных settings`);
+                        const sheetResponse = await sheetsApi.getSheet(sheet.id.toString());
+                        if (sheetResponse.data?.sheet?.settings?.columnSizes) {
+                          console.log(`📊 Загружены settings из getSheet:`, sheetResponse.data.sheet.settings.columnSizes);
+                          setColumnSizes(sheetResponse.data.sheet.settings.columnSizes);
+                        }
+                      } catch (reloadError) {
+                        console.error('❌ Ошибка перезагрузки sheet:', reloadError);
                       }
-                    } catch (reloadError) {
-                      console.error('❌ Ошибка перезагрузки sheet:', reloadError);
+                    } else {
+                      console.log('🚫 Пропускаем перезагрузку sheet - автосортировка DMD Cottage уже выполнена');
                     }
                   }
                 } catch (error) {
@@ -1774,7 +1824,92 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
 
     setCells(newCells);
     console.log('🔄 Автосортировка DMD Cottage по столбцу A выполнена (число+литера, группы с дублем)');
-  }, [cells, sheet, isDMDCottageReport, getCellValue]);
+    
+    // Сохраняем отсортированные ячейки на сервер
+    const cellsToSave = Array.from(newCells.values())
+      .filter(cell => cell.row >= dataStartRow && cell.row < writeRow) // только строки с данными
+      .map(cell => ({
+        row: cell.row,
+        column: cell.column,
+        value: cell.value,
+        format: cell.format
+      }));
+    
+    if (cellsToSave.length > 0) {
+      console.log(`💾 Сохраняем ${cellsToSave.length} отсортированных ячеек на сервер`);
+      saveCellsBatchOptimized(cellsToSave);
+    }
+  }, [cells, sheet, isDMDCottageReport, getCellValue, saveCellsBatchOptimized]);
+
+  // Функция автоматического расчета доплаты для DMD Cottage (Общая сумма - Предоплата)
+  const calculateDoplataForDMDCottage = useCallback(() => {
+    if (!isDMDCottageReport) return;
+    
+    const totalRows = sheet.rowCount || 100;
+    const dataStartRow = 2; // Данные начинаются с 3-й строки (индекс 2)
+    
+    // Индексы колонок для шаблона DMD Cottage
+    const TOTAL_SUM_COL = 11;     // Общая сумма
+    const PREPAYMENT_COL = 12;    // Предоплата  
+    const DOPLATA_COL = 13;       // Доплата
+    
+    const newCells = new Map(cells);
+    let updatedCount = 0;
+
+    for (let row = dataStartRow; row < totalRows; row++) {
+      const totalSumKey = getCellKey(row, TOTAL_SUM_COL);
+      const prepaymentKey = getCellKey(row, PREPAYMENT_COL);
+      const doplataKey = getCellKey(row, DOPLATA_COL);
+      
+      const totalSumCell = newCells.get(totalSumKey);
+      const prepaymentCell = newCells.get(prepaymentKey);
+      
+      // Проверяем есть ли данные в строке (по колонке A)
+      const rowAKey = getCellKey(row, 0);
+      const rowACell = newCells.get(rowAKey);
+      if (!rowACell?.value || !rowACell.value.toString().trim()) continue;
+      
+      // Получаем числовые значения
+      const totalSum = parseFloat((totalSumCell?.value || '0').toString().replace(/[^\d.-]/g, '')) || 0;
+      const prepayment = parseFloat((prepaymentCell?.value || '0').toString().replace(/[^\d.-]/g, '')) || 0;
+      
+      // Рассчитываем доплату только если есть общая сумма
+      if (totalSum > 0) {
+        const doplata = totalSum - prepayment;
+        const existingDoplataCell = newCells.get(doplataKey);
+        
+        // Обновляем ячейку доплаты
+        newCells.set(doplataKey, {
+          ...existingDoplataCell,
+          row,
+          column: DOPLATA_COL,
+          value: doplata.toString(),
+          format: existingDoplataCell?.format || {}
+        });
+        
+        updatedCount++;
+      }
+    }
+
+    if (updatedCount > 0) {
+      setCells(newCells);
+      console.log(`💰 Автоматический расчет доплаты DMD Cottage выполнен для ${updatedCount} строк`);
+      
+      // Сохраняем обновленные ячейки на сервер
+      const cellsToSave = Array.from(newCells.values())
+        .filter(cell => cell.column === DOPLATA_COL && cell.row >= dataStartRow)
+        .map(cell => ({
+          row: cell.row,
+          column: cell.column,
+          value: cell.value,
+          format: cell.format
+        }));
+
+      if (cellsToSave.length > 0) {
+        saveCellsBatchOptimized(cellsToSave);
+      }
+    }
+  }, [cells, sheet, isDMDCottageReport, saveCellsBatchOptimized]);
 
   // Выполняем автосортировку один раз после загрузки ячеек для отчета DMD Cottage
   const hasAutoSortedRef = useRef(false);
@@ -1788,11 +1923,18 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     
     const timer = setTimeout(() => {
       sortByColumnAForDMDCottage();
+      
       hasAutoSortedRef.current = true;
       needsResizeAfterSortRef.current = true;
-    }, 2);
+      calculateDoplataForDMDCottage();
+      // Запускаем расчет доплаты после автосортировки
+      // setTimeout(() => {
+        
+      // }, 2000);
+
+    }, 1000);
     return () => clearTimeout(timer);
-  }, [isDMDCottageReport, cells, sortByColumnAForDMDCottage]);
+  }, [isDMDCottageReport, cells, sortByColumnAForDMDCottage, calculateDoplataForDMDCottage]);
 
   // Эффект ниже handleAutoResize: триггерит авторазмер один раз после сортировки
 
@@ -2078,9 +2220,18 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       });
       
       if (cellsToUpdate.length > 0) {
-        for (const cellUpdate of cellsToUpdate) {
-          await cellsApi.updateCell(sheet.id, cellUpdate.row, cellUpdate.column, { format: cellUpdate.format });
-        }
+        console.log(`🎨 Применяем форматирование переноса текста к ${cellsToUpdate.length} ячейкам`);
+        
+        // Конвертируем в формат CellUpdate для пакетного обновления
+        const formatUpdates: CellUpdate[] = cellsToUpdate.map(cellUpdate => ({
+          row: cellUpdate.row,
+          column: cellUpdate.column,
+          format: cellUpdate.format
+        }));
+        
+        // Используем пакетное обновление
+        await saveCellsBatchOptimized(formatUpdates);
+        
         // Обновляем локальное состояние ячеек
         const newCells = new Map(cells);
         cellsToUpdate.forEach((cellUpdate) => {
@@ -2094,19 +2245,24 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       }
       
       // Принудительная перезагрузка данных таблицы для обновления settings
-      try {
-        const sheetResponse = await sheetsApi.getSheet(sheet.id.toString());
-        if (sheetResponse.data?.sheet?.settings) {
-          const { columnSizes: reloadedColumnSizes = {}, rowSizes: reloadedRowSizes = {} } = sheetResponse.data.sheet.settings;
-          console.log('🔄 Перезагружены размеры из таблицы:', { reloadedColumnSizes, reloadedRowSizes });
-          setColumnSizes(reloadedColumnSizes);
-          setRowSizes(reloadedRowSizes);
+      // НЕ перезагружаем если была выполнена автосортировка DMD Cottage
+      if (!(isDMDCottageReport && hasAutoSortedRef.current)) {
+        try {
+          const sheetResponse = await sheetsApi.getSheet(sheet.id.toString());
+          if (sheetResponse.data?.sheet?.settings) {
+            const { columnSizes: reloadedColumnSizes = {}, rowSizes: reloadedRowSizes = {} } = sheetResponse.data.sheet.settings;
+            // console.log('🔄 Перезагружены размеры из таблицы:', { reloadedColumnSizes, reloadedRowSizes });
+            // setColumnSizes(reloadedColumnSizes);
+            // setRowSizes(reloadedRowSizes);
+          }
+        } catch (reloadError) {
+          console.error('❌ Ошибка перезагрузки настроек таблицы:', reloadError);
         }
-      } catch (reloadError) {
-        console.error('❌ Ошибка перезагрузки настроек таблицы:', reloadError);
+      } else {
+        console.log('🚫 Пропускаем перезагрузку данных - автосортировка DMD Cottage уже выполнена');
       }
       
-      console.log('✅ Автонастройка размеров завершена успешно');
+      // console.log('✅ Автонастройка размеров завершена успешно');
       
     } catch (error) {
       console.error('❌ Ошибка при автонастройке размеров:', error);
@@ -2549,12 +2705,31 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     if (isAutoResizeRunningRef.current) return;
     if (lastAutoResizedDateRef.current === reportDate) return;
     if (cells.size === 0) return; // ждем загрузку ячеек
+    
+    // Сбрасываем флаг автосортировки при изменении даты для DMD Cottage отчетов
+    if (isDMDCottageReport) {
+      console.log('🔄 Сброс флага автосортировки при изменении даты отчета');
+      hasAutoSortedRef.current = false;
+      needsResizeAfterSortRef.current = false;
+    }
+    
     isAutoResizeRunningRef.current = true;
     Promise.resolve(handleAutoResize()).finally(() => {
       lastAutoResizedDateRef.current = reportDate;
       isAutoResizeRunningRef.current = false;
+      
+      // Запускаем автосортировку после завершения автонастройки размеров
+      if (isDMDCottageReport && !hasAutoSortedRef.current) {
+        console.log('🚀 Запуск автосортировки после изменения даты отчета');
+        setTimeout(() => {
+          sortByColumnAForDMDCottage();
+          hasAutoSortedRef.current = true;
+          needsResizeAfterSortRef.current = true;
+          calculateDoplataForDMDCottage();
+        }, 500);
+      }
     });
-  }, [reportDate, isReportSheet, cells, handleAutoResize]);
+  }, [reportDate, isReportSheet, cells, handleAutoResize, isDMDCottageReport, sortByColumnAForDMDCottage, calculateDoplataForDMDCottage]);
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>

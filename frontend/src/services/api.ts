@@ -136,6 +136,15 @@ export const cellsApi = {
   }>) =>
     api.post(`/cells/sheets/${sheetId}/cells/batch`, { cells }),
 
+  updateCellsBatchOptimized: (sheetId: string, cells: Array<{
+    row: number;
+    column: number;
+    value?: string;
+    formula?: string;
+    format?: any;
+  }>) =>
+    api.post(`/cells/sheets/${sheetId}/cells/batch-optimized`, { cells }),
+
   getCellHistory: (sheetId: number, row: number, column: number, limit = 50, offset = 0) =>
     api.get(`/cells/sheets/${sheetId}/cells/${row}/${column}/history?limit=${limit}&offset=${offset}`),
 

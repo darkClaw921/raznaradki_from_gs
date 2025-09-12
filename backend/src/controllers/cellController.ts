@@ -646,6 +646,142 @@ export const formatCells = async (req: Request, res: Response) => {
   }
 };
 
+// Пакетное обновление ячеек (оптимизированное для больших объемов)
+export const updateCellsBatchOptimized = async (req: Request, res: Response) => {
+  try {
+    const { sheetId } = req.params;
+    const { cells: cellsData } = req.body;
+    const userId = req.user.id;
+
+    console.log(`🚀 Пакетное обновление ${cellsData.length} ячеек в таблице ${sheetId}`);
+
+    // Проверка доступа к таблице
+    const sheet = await Sheet.findByPk(sheetId);
+    if (!sheet) {
+      return res.status(404).json({
+        error: 'Таблица не найдена'
+      });
+    }
+
+    // Проверка прав на редактирование
+    const userSheet = await UserSheet.findOne({
+      where: { userId, sheetId }
+    });
+
+    const hasWriteAccess = sheet.createdBy === userId || 
+                          (userSheet && ['write', 'admin'].includes(userSheet.permission));
+
+    if (!hasWriteAccess) {
+      return res.status(403).json({
+        error: 'Нет прав на редактирование ячеек'
+      });
+    }
+
+    const updatedCells = [];
+    const createdCells = [];
+
+    // Группируем ячейки для более эффективной обработки
+    const existingCells = await Cell.findAll({
+      where: {
+        sheetId,
+        [Op.or]: cellsData.map(cellData => ({
+          row: parseInt(cellData.row),
+          column: parseInt(cellData.column)
+        }))
+      }
+    });
+
+    // Создаем мапу существующих ячеек для быстрого поиска
+    const existingCellsMap = new Map();
+    existingCells.forEach(cell => {
+      existingCellsMap.set(`${cell.row}-${cell.column}`, cell);
+    });
+
+    // Обрабатываем все ячейки
+    for (const cellData of cellsData) {
+      const { row, column, value, formula, format } = cellData;
+      const rowNum = parseInt(row);
+      const colNum = parseInt(column);
+      const cellKey = `${rowNum}-${colNum}`;
+
+      const existingCell = existingCellsMap.get(cellKey);
+
+      if (existingCell) {
+        // Обновляем существующую ячейку
+        const updateData: any = {};
+        if (value !== undefined) updateData.value = value;
+        if (formula !== undefined) updateData.formula = formula;
+        if (format !== undefined) updateData.format = format;
+
+        if (Object.keys(updateData).length > 0) {
+          // Создаем запись в истории перед обновлением
+          await CellHistory.create({
+            cellId: existingCell.id,
+            sheetId: parseInt(sheetId),
+            row: rowNum,
+            column: colNum,
+            oldValue: existingCell.value,
+            newValue: value,
+            oldFormula: existingCell.formula,
+            newFormula: formula,
+            oldFormat: existingCell.format,
+            newFormat: format,
+            changedBy: userId,
+            changeType: value !== undefined ? 'value' : (formula !== undefined ? 'formula' : 'format')
+          });
+
+          await existingCell.update(updateData);
+          updatedCells.push(existingCell);
+        }
+      } else {
+        // Создаем новую ячейку
+        const cell = await Cell.create({
+          sheetId: parseInt(sheetId),
+          row: rowNum,
+          column: colNum,
+          value: value || '',
+          formula: formula || null,
+          format: format || null,
+          isLocked: false
+        });
+
+        // Создаем запись в истории для новой ячейки
+        await CellHistory.create({
+          cellId: cell.id,
+          sheetId: parseInt(sheetId),
+          row: rowNum,
+          column: colNum,
+          oldValue: null,
+          newValue: value,
+          oldFormula: null,
+          newFormula: formula,
+          oldFormat: null,
+          newFormat: format,
+          changedBy: userId,
+          changeType: 'create'
+        });
+
+        createdCells.push(cell);
+      }
+    }
+
+    console.log(`✅ Пакетное обновление завершено: обновлено ${updatedCells.length}, создано ${createdCells.length}`);
+
+    res.json({
+      message: 'Ячейки обновлены пакетно',
+      updatedCells: updatedCells.length,
+      createdCells: createdCells.length,
+      totalProcessed: cellsData.length
+    });
+
+  } catch (error) {
+    console.error('Ошибка пакетного обновления ячеек:', error);
+    res.status(500).json({
+      error: 'Ошибка сервера при пакетном обновлении ячеек'
+    });
+  }
+};
+
 // Массовое обновление ячеек (для операций вставки)
 export const updateCellsBatch = async (req: Request, res: Response) => {
   try {
