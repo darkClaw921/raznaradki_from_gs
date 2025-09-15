@@ -189,14 +189,17 @@ function extractWebhookInfo(webhookData: any) {
       client_fio: webhookSource.client?.fio,
       client_phone: webhookSource.client?.phone,
       amount: webhookSource.amount,
-      source: webhookSource.source,
-      platform_tax: webhookSource.platform_tax
+      source: webhookSource.source
     });
     
     // Вычисляем количество дней
     const beginDate = new Date(webhookSource.begin_date);
     const endDate = new Date(webhookSource.end_date);
     const daysDiff = Math.ceil((endDate.getTime() - beginDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    // Извлекаем platform_tax и преобразуем в число
+    const platformTaxStr = webhookSource.platform_tax || '0';
+    const platformTax = parseFloat(platformTaxStr) || 0;
 
     const extractedData = {
       id: webhookSource.id, // ID бронирования для связи
@@ -212,7 +215,7 @@ function extractWebhookInfo(webhookData: any) {
       statusCode: webhookSource.status_cd || 0,
       source: webhookSource.source || '',
       notes: webhookSource.notes || '',
-      platformTax: parseFloat(webhookSource.platform_tax) || 0 // Добавляем platform_tax с обработкой null
+      platformTax: platformTax // Добавляем platform_tax для расчетов
     };
 
     console.log('✅ Успешно извлечены данные для обработки:', { action, ...extractedData });
@@ -355,9 +358,10 @@ async function addBookingToSheet(sheet: any, bookingData: any) {
     const formattedBeginDate = formatDate(bookingData.beginDate);
     const formattedEndDate = formatDate(bookingData.endDate);
 
-    // Рассчитываем значения для колонок G и H на основе platform_tax
-    const platformTaxRounded = Math.round(bookingData.platformTax || 0);
-    
+    // Вычисляем колонки G и H с учетом platform_tax
+    const totalAmountMinusTax = Math.round((bookingData.totalAmount || 0) - (bookingData.platformTax || 0));
+    const prepaymentMinusTax = Math.round((bookingData.prepayment || 0) - (bookingData.platformTax || 0));
+
     // Маппинг данных в ячейки (в соответствии с шаблоном "Журнал заселения DMD Cottage")
     const cellsData = [
       { row: targetRow, column: 0, value: monthYear }, // Месяц (например, "Январь 2025")
@@ -366,8 +370,8 @@ async function addBookingToSheet(sheet: any, bookingData: any) {
       { row: targetRow, column: 3, value: formattedEndDate }, // Дата выселения (06.01.2025)
       { row: targetRow, column: 4, value: bookingData.guestName }, // ФИО
       { row: targetRow, column: 5, value: bookingData.phone }, // Телефон
-      { row: targetRow, column: 6, value: platformTaxRounded.toString() }, // Колонка G - platform_tax округленный
-      { row: targetRow, column: 7, value: platformTaxRounded.toString() }, // Колонка H - platform_tax округленный
+      { row: targetRow, column: 6, value: totalAmountMinusTax.toString() }, // Общая сумма минус platform_tax (колонка G)
+      { row: targetRow, column: 7, value: prepaymentMinusTax.toString() }, // Предоплата минус platform_tax (колонка H)
       { row: targetRow, column: 8, value: bookingData.pricePerDay.toString() }, // Доплата за день
       { row: targetRow, column: 10, value: bookingData.source }, // Источник
       { row: targetRow, column: 11, value: bookingData.notes }, // Комментарий
@@ -383,9 +387,11 @@ async function addBookingToSheet(sheet: any, bookingData: any) {
       дата_выселения: formattedEndDate,
       фио: bookingData.guestName,
       телефон: bookingData.phone,
-      сумма: bookingData.totalAmount,
-      platform_tax_исходный: bookingData.platformTax,
-      platform_tax_округленный: platformTaxRounded
+      общая_сумма_исходная: bookingData.totalAmount,
+      предоплата_исходная: bookingData.prepayment,
+      platform_tax: bookingData.platformTax,
+      общая_сумма_минус_налог: totalAmountMinusTax,
+      предоплата_минус_налог: prepaymentMinusTax
     });
 
     if (isUpdate) {
