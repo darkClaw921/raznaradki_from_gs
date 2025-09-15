@@ -132,6 +132,11 @@ const Cell: React.FC<CellProps> = ({
     if (column === 0) {
       styles.fontWeight = 'bold';
     }
+    
+    // Жирное форматирование для колонок "Общая сумма" (11) и "Доплата" (13) в отчете DMD Cottage для строк данных
+    if (isDMDCottageReport && (column === 11 || column === 13) && row >= 2) {
+      styles.fontWeight = 'bold';
+    }
 
     // Поддержка переноса текста — строго не выходим за границы ячейки
     if (format.whiteSpace) {
@@ -317,7 +322,7 @@ const Cell: React.FC<CellProps> = ({
             padding: '4px 8px',
             fontSize: format.fontSize ? `${format.fontSize}px` : '0.875rem',
             fontFamily: format.fontFamily || 'inherit',
-            fontWeight: column === 0 ? 'bold' : (format.fontWeight || 'normal'),
+            fontWeight: (column === 0 || (isDMDCottageReport && (column === 11 || column === 13) && row >= 2)) ? 'bold' : (format.fontWeight || 'normal'),
             fontStyle: format.fontStyle || 'normal',
             textAlign: format.textAlign || 'left',
           },
