@@ -1829,6 +1829,18 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     return isDMDCottageReport;
   }, [isDMDCottageReport]);
 
+  // Определяем является ли таблица отчетом
+  const isReportSheet = useMemo(() => {
+    const result = sheet?.name?.toLowerCase().includes('отчет') ||
+                   sheet?.template?.name?.toLowerCase().includes('отчет');
+    console.log('🔍 isReportSheet проверка:', {
+      sheetName: sheet?.name,
+      templateName: sheet?.template?.name,
+      result
+    });
+    return result;
+  }, [sheet?.name, sheet?.template?.name]);
+
   // Предварительно вычисляем строки, которые являются концом группы вида ["29а", "29а дуль"] по колонке A (0)
   const groupEndRows = useMemo(() => {
     if (!hideRowNumbers) return new Set<number>();
@@ -1844,6 +1856,44 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     }
     return result;
   }, [hideRowNumbers, sheet.rowCount, cells]);
+
+  // Вычисляем строки, которые являются парными ("X дубль")
+  const pairRows = useMemo(() => {
+    const result = new Set<number>();
+    const maxRows = sheet.rowCount || 100;
+    for (let r = 0; r < maxRows; r++) {
+      const value = (getCellValue(r, 0) || '').toString().trim().toLowerCase();
+      if (value.includes('дубль')) {
+        result.add(r);
+      }
+    }
+    return result;
+  }, [sheet.rowCount, cells, getCellValue]);
+
+  // Определяем строки, которые должны иметь жирную нижнюю границу
+  const shouldHaveBottomBorder = useCallback((row: number): boolean => {
+    // Жирная граница для 2-й строки (заголовки) для отчетов
+    if (isReportSheet && row === 1) return true;
+    
+    // Для DMD Cottage отчета: жирная граница для всех строк с данными, кроме парных
+    if (isDMDCottageReport && row >= 2) {
+      // Проверяем есть ли данные в строке
+      const hasData = getCellValue(row, 0)?.toString().trim() !== '';
+      if (!hasData) return false;
+      
+      // Исключаем парные строки ("X дубль")
+      if (pairRows.has(row)) return false;
+      
+      // Исключаем строки перед парными строками (чтобы не было границы между "X" и "X дубль")
+      const nextRowValue = getCellValue(row + 1, 0)?.toString().trim().toLowerCase() || '';
+      const currentRowValue = getCellValue(row, 0)?.toString().trim().toLowerCase() || '';
+      if (nextRowValue === `${currentRowValue} дубль`) return false;
+      
+      return true;
+    }
+    
+    return false;
+  }, [isReportSheet, isDMDCottageReport, pairRows, getCellValue]);
 
   // Авто-сортировка по столбцу A для отчета DMD Cottage (с сохранением пар X / X дубль)
   const sortByColumnAForDMDCottage = useCallback(() => {
@@ -2161,6 +2211,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
                 const columnWidth = getColumnWidth(col);
                 
                 const isGroupEnd = groupEndRows.has(row);
+                const hasBottomBorder = shouldHaveBottomBorder(row);
                 cells.push(
                   <Cell
                     key={`${row}-${col}`}
@@ -2176,6 +2227,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
                     width={columnWidth}
                     height={rowHeight}
                     isGroupEndRow={isGroupEnd}
+                    hasBottomBorder={hasBottomBorder}
                     onEditValueChange={setEditValue}
                     onClick={() => handleCellClick(row, col)}
                     onMouseDown={() => handleCellMouseDown(row, col)}
@@ -2216,17 +2268,6 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       debouncedCalculateDoplata.cancel();
     };
   }, [debouncedSaveCell, debouncedUpdateSelection, debouncedScrollUpdate, debouncedCalculateDoplata]);
-
-  const isReportSheet = useMemo(() => {
-    const result = sheet?.name?.toLowerCase().includes('отчет') ||
-                   sheet?.template?.name?.toLowerCase().includes('отчет');
-    console.log('🔍 isReportSheet проверка:', {
-      sheetName: sheet?.name,
-      templateName: sheet?.template?.name,
-      result
-    });
-    return result;
-  }, [sheet?.name, sheet?.template?.name]);
 
   // Функция для расчета оптимальной ширины столбца на основе содержимого
   const calculateOptimalColumnWidth = useCallback((column: number): number => {
@@ -2833,9 +2874,10 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
       }
     }
 
-    // Границы второй строки с учетом смещения колонок
+    // Границы второй строки с учетом смещения колонок (заголовки с жирной нижней границей)
     if (sheet?.template?.name?.includes('Отчет') && totalRows > 1) {
       const thin = { style: 'thin', color: { argb: 'FF000000' } } as any;
+      const medium = { style: 'medium', color: { argb: 'FF000000' } } as any;
       // Рассчитываем количество видимых колонок
       let visibleColCount = 0;
       for (let col = 0; col < totalCols; col++) {
@@ -2848,7 +2890,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
         cell.border = {
           top: thin,
           left: thin,
-          bottom: thin,
+          bottom: medium, // Жирная нижняя граница для заголовков
           right: thin
         } as any;
       }
@@ -2863,6 +2905,41 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
         visibleCols.push(col);
       }
       const medium = { style: 'medium', color: { argb: 'FF000000' } } as any;
+      
+      // Определяем парные строки ("X дубль")
+      const pairRows = new Set<number>();
+      for (let r = 0; r < totalRows; r++) {
+        const value = (getCellValue(r, 0) || '').toString().trim().toLowerCase();
+        if (value.includes('дубль')) {
+          pairRows.add(r);
+        }
+      }
+      
+      // Применяем жирные нижние границы для всех строк с данными, кроме парных
+      for (let r = 2; r < totalRows; r++) { // Начинаем с 3-й строки (индекс 2)
+        const hasData = getCellValue(r, 0)?.toString().trim() !== '';
+        if (!hasData) continue;
+        
+        // Исключаем парные строки
+        if (pairRows.has(r)) continue;
+        
+        // Исключаем строки перед парными строками (чтобы не было границы между "X" и "X дубль")
+        const nextRowValue = getCellValue(r + 1, 0)?.toString().trim().toLowerCase() || '';
+        const currentRowValue = getCellValue(r, 0)?.toString().trim().toLowerCase() || '';
+        if (nextRowValue === `${currentRowValue} дубль`) continue;
+        
+        // Применяем нижнюю границу по всем видимым колонкам
+        let excelC = 1;
+        for (let col = 0; col < totalCols; col++) {
+          if (sheet?.templateId === 2 && (col === 5 || col === 8 || col === 15)) continue;
+          const cell = worksheet.getCell(r + 1, excelC); // +1 для 1-based
+          const existing = cell.border || {};
+          cell.border = { ...existing, bottom: medium } as any;
+          excelC++;
+        }
+      }
+      
+      // Дополнительные границы для концов групп (старая логика для совместимости)
       for (let r = 0; r < totalRows - 1; r++) {
         const v1 = (getCellValue(r, 0) || '').toString().trim().toLowerCase();
         const v2 = (getCellValue(r + 1, 0) || '').toString().trim().toLowerCase();

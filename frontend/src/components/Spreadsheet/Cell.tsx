@@ -15,6 +15,7 @@ interface CellProps {
   width?: number;
   height?: number;
   isGroupEndRow?: boolean;
+  hasBottomBorder?: boolean;
   onEditValueChange: (value: string) => void;
   onClick: () => void;
   onMouseDown?: () => void;
@@ -47,6 +48,7 @@ const Cell: React.FC<CellProps> = ({
   width = 100,
   height = 30,
   isGroupEndRow = false,
+  hasBottomBorder = false,
   onEditValueChange,
   onClick,
   onMouseDown,
@@ -197,6 +199,11 @@ const Cell: React.FC<CellProps> = ({
 
     // Добавляем жирную нижнюю границу для конца группы ("X" и следующая строка "X дуль")
     if (isDMDCottageReport && isGroupEndRow) {
+      styles.borderBottom = '2px solid #000000';
+    }
+
+    // Добавляем жирную нижнюю границу для заголовков и строк данных
+    if (hasBottomBorder) {
       styles.borderBottom = '2px solid #000000';
     }
 
