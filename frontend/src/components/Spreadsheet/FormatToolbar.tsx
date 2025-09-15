@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -61,7 +61,10 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({
   const [fontSize, setFontSize] = useState(12);
   const [textAlign, setTextAlign] = useState('left');
   const [colorAnchor, setColorAnchor] = useState<null | HTMLElement>(null);
+  const [isColorUserInitiated, setIsColorUserInitiated] = useState(false);
   const [borderAnchor, setBorderAnchor] = useState<null | HTMLElement>(null);
+  const [isUserInitiated, setIsUserInitiated] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [addRowDialogOpen, setAddRowDialogOpen] = useState(false);
   const [addColumnDialogOpen, setAddColumnDialogOpen] = useState(false);
   const [rowCount, setRowCount] = useState(1);
@@ -148,6 +151,25 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({
 
   const isReadOnly = userPermissions === 'read';
   const canEditStructure = userPermissions === 'admin';
+
+  // Защита от случайного открытия меню при инициализации
+  useEffect(() => {
+    // Сбрасываем состояние меню при инициализации компонента
+    setBorderAnchor(null);
+    setColorAnchor(null);
+    setIsUserInitiated(false);
+    setIsColorUserInitiated(false);
+    setIsInitializing(true);
+    console.log('🔧 FormatToolbar инициализирован, меню сброшены');
+    
+    // Разрешаем взаимодействие через 2 секунды после инициализации
+    const timer = setTimeout(() => {
+      setIsInitializing(false);
+      console.log('🔧 FormatToolbar готов к взаимодействию');
+    }, 2000);
+    
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <Paper 
@@ -299,7 +321,30 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({
           {/* Цвета */}
           <Tooltip title="Цвет текста и фона">
             <IconButton 
-              onClick={(e) => setColorAnchor(e.currentTarget)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Дополнительная проверка что это реальный клик пользователя и компонент готов
+                if (e.isTrusted && e.type === 'click' && !isInitializing) {
+                  console.log('🎨 Реальный клик пользователя на кнопку цветов', {
+                    isTrusted: e.isTrusted,
+                    type: e.type,
+                    target: e.target,
+                    currentTarget: e.currentTarget
+                  });
+                  setIsColorUserInitiated(true);
+                  setColorAnchor(e.currentTarget);
+                } else {
+                  console.log('🚫 Блокируем подозрительное событие на кнопке цветов', {
+                    isTrusted: e.isTrusted,
+                    type: e.type,
+                    target: e.target,
+                    currentTarget: e.currentTarget,
+                    isInitializing
+                  });
+                }
+              }}
               size="small"
             >
               <Palette />
@@ -308,8 +353,15 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({
 
           <Menu
             anchorEl={colorAnchor}
-            open={Boolean(colorAnchor)}
-            onClose={() => setColorAnchor(null)}
+            open={Boolean(colorAnchor) && isColorUserInitiated}
+            onClose={() => {
+              console.log('🎨 Закрываем меню цветов');
+              setColorAnchor(null);
+              setIsColorUserInitiated(false);
+            }}
+            disableAutoFocus
+            disableEnforceFocus
+            disableRestoreFocus
           >
             <Box sx={{ p: 2, maxWidth: 200 }}>
               <Box sx={{ mb: 1, fontWeight: 'bold' }}>Цвет текста</Box>
@@ -352,7 +404,30 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({
           {/* Границы */}
           <Tooltip title="Границы">
             <IconButton 
-              onClick={(e) => setBorderAnchor(e.currentTarget)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Дополнительная проверка что это реальный клик пользователя и компонент готов
+                if (e.isTrusted && e.type === 'click' && !isInitializing) {
+                  console.log('🔳 Реальный клик пользователя на кнопку границ', {
+                    isTrusted: e.isTrusted,
+                    type: e.type,
+                    target: e.target,
+                    currentTarget: e.currentTarget
+                  });
+                  setIsUserInitiated(true);
+                  setBorderAnchor(e.currentTarget);
+                } else {
+                  console.log('🚫 Блокируем подозрительное событие на кнопке границ', {
+                    isTrusted: e.isTrusted,
+                    type: e.type,
+                    target: e.target,
+                    currentTarget: e.currentTarget,
+                    isInitializing
+                  });
+                }
+              }}
               size="small"
             >
               <BorderAll />
@@ -361,8 +436,15 @@ const FormatToolbar: React.FC<FormatToolbarProps> = ({
 
           <Menu
             anchorEl={borderAnchor}
-            open={Boolean(borderAnchor)}
-            onClose={() => setBorderAnchor(null)}
+            open={Boolean(borderAnchor) && isUserInitiated}
+            onClose={() => {
+              console.log('🔳 Закрываем меню границ');
+              setBorderAnchor(null);
+              setIsUserInitiated(false);
+            }}
+            disableAutoFocus
+            disableEnforceFocus
+            disableRestoreFocus
           >
             <Box sx={{ p: 1 }}>
               {borderStyles.map((style) => (

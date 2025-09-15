@@ -2296,10 +2296,13 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
 
   // Функция автонастройки размеров для отчетов
   const handleAutoResize = useCallback(async () => {
-    if (!isReportSheet || userPermissions === 'read') {
-      console.log('⚠️ Автонастройка пропущена:', { isReportSheet, userPermissions });
+    if (!isReportSheet) {
+      console.log('⚠️ Автонастройка пропущена: не отчет', { isReportSheet, userPermissions });
       return;
     }
+    
+    // Разрешаем автонастройку для всех пользователей с доступом к таблице
+    console.log('✅ Автонастройка разрешена для всех пользователей с доступом к таблице');
 
     // Предотвращаем повторные вызовы
     if (isAutoResizeRunningRef.current) {
@@ -2403,9 +2406,34 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
           console.log('🔄 Ответ от сервера - настройки:', response.data.settings);
           if (Object.keys(newColumnSizes).length > 0) setColumnSizes(savedColumnSizes);
           if (Object.keys(newRowSizes).length > 0) setRowSizes(savedRowSizes);
+          
+          // Принудительное обновление UI после изменения размеров
+          console.log('🔄 Принудительное обновление UI после автонастройки размеров');
+          setRenderKey(prev => prev + 1);
+          
+          // Дополнительное обновление через небольшую задержку для гарантии
+          setTimeout(() => {
+            console.log('🔄 Дополнительное обновление UI через 200мс');
+            setRenderKey(prev => prev + 1);
+            setCells(new Map(cells)); // Принудительное обновление ячеек
+            
+            // Обновляем виртуализацию для корректного отображения новых размеров
+            setScrollTop(prev => prev + 1);
+            setTimeout(() => {
+              setScrollTop(prev => prev - 1);
+            }, 50);
+          }, 200);
         }
       } else {
         console.log('ℹ️ Автонастройка: изменений размеров нет, запрос к backend не отправлен');
+        
+        // Принудительно обновляем UI даже если нет изменений размеров (для корректного отображения)
+        console.log('🔄 Принудительное обновление UI для корректного отображения');
+        setRenderKey(prev => prev + 1);
+        
+        setTimeout(() => {
+          setRenderKey(prev => prev + 1);
+        }, 100);
       }
       
       // Применяем форматирование переноса текста только если есть изменения размеров
@@ -2938,6 +2966,29 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
     });
   }, [reportDate, isReportSheet, cells.size, handleAutoResize, isDMDCottageReport, sortByColumnAForDMDCottage, calculateDoplataForDMDCottage]);
 
+  // Обертка для handleAutoResize с принудительным обновлением UI
+  const handleAutoResizeWithUIUpdate = useCallback(async () => {
+    console.log('🔧 Запуск автонастройки с принудительным обновлением UI');
+    
+    await handleAutoResize();
+    
+    // Принудительное обновление UI после завершения автонастройки
+    console.log('🔄 Принудительное обновление UI после ручной автонастройки');
+    setRenderKey(prev => prev + 1);
+    
+    setTimeout(() => {
+      console.log('🔄 Дополнительное обновление UI после ручной автонастройки');
+      setRenderKey(prev => prev + 1);
+      setCells(new Map(cells));
+      
+      // Обновляем виртуализацию
+      setScrollTop(prev => prev + 1);
+      setTimeout(() => {
+        setScrollTop(prev => prev - 1);
+      }, 50);
+    }, 300);
+  }, [handleAutoResize, cells, setRenderKey, setCells, setScrollTop]);
+
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Панель инструментов */}
@@ -2947,7 +2998,7 @@ const Spreadsheet: React.FC<SpreadsheetProps> = ({ sheet, userPermissions, repor
         onAddRow={handleAddRow}
         onAddColumn={handleAddColumn}
         onShowHistory={handleShowHistory}
-        onAutoResize={handleAutoResize}
+        onAutoResize={handleAutoResizeWithUIUpdate}
         userPermissions={userPermissions}
         isReportSheet={isReportSheet}
       />
